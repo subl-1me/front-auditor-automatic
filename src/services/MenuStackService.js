@@ -14,12 +14,22 @@ class MenuStackService {
     this.MenuStack.push(menuType);
   }
 
-  async waitForChoice() {
+  /**
+   * @description Initialize "Home" menu and makes the first menu input request
+   * @returns {Promise<string>} User's choice (see the Menu Schema)
+   */
+  async init() {
+    this.add("Home"); // default
     const currentMenu = this.MenuStack.peek();
-    let userSelection = await currentMenu.show();
-    return userSelection;
+    const choice = await currentMenu.waitForChoice();
+    return choice;
   }
 
+  /** Make some step validations before star proccessing user's choice
+   * Check user's choice
+   * @param {*} choice
+   * @returns
+   */
   async choiceHandler(choice) {
     if (choice === "Volver" || choice === "Exit") {
       console.clear();
@@ -42,7 +52,6 @@ class MenuStackService {
       return;
     }
 
-    // Verify what kind of module is the choice
     const module = await this.operationManager.choiceVerificator(choice);
     if (module === "categories" || module === "subCategory") {
       this.add(choice);

@@ -6,7 +6,7 @@ const main = async () => {
   const Menu = new MenuStackService(operationManager);
 
   do {
-    const response = await Menu.waitForChoice();
+    const response = await Menu.init();
     await Menu.choiceHandler(response);
   } while (!Menu.isFinalized());
 
