@@ -1,83 +1,102 @@
-const inquirer = require('inquirer');
+const inquirer = require("inquirer");
+const ConfigService = require("../services/ConfigService");
 
-/**
- * @description Handles the creation of menus to handle user's responses
- */
-class Menu{
-    questionsList = [];
+class Menu {
+  config = {};
 
-    constructor(){
-        this.inquirer = inquirer;
-    }
-
-    /**
-     * @description Creates a new home/principal menu to user
-     * @returns {Promise<string>} An user's response
-     * 
-     */
-    async home(){
-        const list = [
-            {
-                type: 'list',
-                name: 'menuDecision',
-                message: 'What do you want to do?',
-                choices: [
-                        'Check pit',
-                        'Aud',
-                        'Reports',
-                        new inquirer.Separator(),
-                        'Exit'
-                ]
-            }
-        ]
-
-        const response = await this.inquirer.prompt(list);
-        return response.menuDecision;
-    }
-
-    /**
-     * @description Creates a new menu to handle API reports
-     * @returns {Promise<String>} An user's response
-     */
-    async reports(){
-        const list = [
-            {
-                type: 'list',
-                name: 'reportsDecision',
-                message: 'Choose an option',
-                choices: [
-                    'Print cobro x operador',
-                    'Print cashier summary',
-                    "Print report de ama de llaves",
-                    "Print audit reports",
-                    new inquirer.Separator(),
-                    "Return"
-                ]
-            }
-        ]
-
-        const response = await this.inquirer.prompt(list);
-        return response.extraDecision;
-    }
-
-    /**
-     * @description Creates a confirm menu
-     * @param {string} message A message to print to check if user is sure of his response
-     * @returns {Promise<String>} An user's response
-     */
-    async confirm(message){
-        const list = [
-            {
-                type: 'confirm',
-                name: 'confirmDecision',
-                message: message,
-                choices: [ 'Yes', 'No' ]
-            }
-        ]
-
-        const response = this.inquirer.prompt(list);
-        return response.confirmDecision;
-    }
+  constructor(type) {
+    this.type = type;
+    this.inquirer = inquirer;
+    this.config = ConfigService.getConfig();
+  }
 }
 
-module.exports = Menu;
+class Home extends Menu {
+  constructor() {
+    super("Home");
+  }
+
+  async show() {
+    try {
+      console.log("----------------");
+      if (!this.config.lastUsernameSession) {
+        console.log(`Front 2 Go TOOLS (Sin sesión)`);
+      } else {
+        console.log(`Front 2 Go TOOLS (${this.config.lastUsernameSession})`);
+      }
+      console.log("----------------");
+      const list = [
+        {
+          type: "list",
+          name: "menuDecision",
+          message: "Elije una opcion:",
+          choices: [
+            "Iniciar Sesion",
+            "Revisar PIT",
+            "Auditoria",
+            "Reportes",
+            new inquirer.Separator(),
+            "Exit",
+          ],
+        },
+      ];
+
+      const input = await this.inquirer.prompt(list);
+      return input.menuDecision;
+    } catch (err) {
+      console.log(err);
+    }
+  }
+}
+
+class Reports extends Menu {
+  constructor() {
+    super("Reportes");
+  }
+
+  async show() {
+    const questionList = [
+      {
+        type: "list",
+        name: "reportSelect",
+        message: "Elija un tipo de reporte:",
+        choices: [
+          "Corte",
+          "Cobro por operador",
+          "Auditoria",
+          "Ama de llaves",
+          new inquirer.Separator(),
+          "Volver",
+        ],
+      },
+    ];
+    const input = await this.inquirer.prompt(questionList);
+
+    return input.reportSelect;
+    // const input = await this.inquirer.prompt(questionList);
+    // if (input.reportSelect === 'Volver') { return '' }
+  }
+}
+
+class Confirm extends Menu {
+  constructor() {
+    super("Confirmar");
+  }
+
+  async show() {
+    const questionList = [
+      {
+        type: "confirm",
+        name: "confirm",
+        message: "Confirmar?",
+        choices: ["Si", "No"],
+      },
+    ];
+
+    const response = await this.inquirer.prompt(questionList);
+    console.log(response.confirm);
+    return response.confirm;
+  }
+}
+
+module.exports = { Home, Reports, Confirm };
