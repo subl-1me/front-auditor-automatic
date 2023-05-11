@@ -16,7 +16,7 @@ class Home extends Menu {
     super("Home");
   }
 
-  async show() {
+  async waitForChoice() {
     try {
       console.log("----------------");
       if (!this.config.lastUsernameSession) {
@@ -54,7 +54,7 @@ class Reports extends Menu {
     super("Reportes");
   }
 
-  async show() {
+  async waitForChoice() {
     const questionList = [
       {
         type: "list",
@@ -83,7 +83,7 @@ class Confirm extends Menu {
     super("Confirmar");
   }
 
-  async show() {
+  async waitForChoice() {
     const questionList = [
       {
         type: "confirm",

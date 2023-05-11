@@ -82,20 +82,25 @@ class OperationManager {
   }
 
   /**
-   * It checks if the choice corresponds to category/sub-category/action
-   * @param {String} choice
-   * @returns null | Menu's module
+   * Determinates the type of property that corresponds to the user's choice by comparing
+   * it with the Menu Schema
+   * @param {String} choice Option to verify.
+   * @returns The property type ("category", "subCategory", "action") or an 'invalid' string
    */
-  choiceVerificator(choice) {
+  getChoiceModule(choice) {
     const MenuSchemaProperties = Object.keys(MenuSchema);
-    const module = MenuSchemaProperties.filter((prop) => {
-      if (MenuSchema[prop].includes(choice)) {
-        return prop;
+    const module = MenuSchemaProperties.find((prop) => {
+      if (
+        MenuSchema.hasOwnProperty(prop) &&
+        MenuSchema[prop].includes(choice)
+      ) {
+        return true;
       }
-    }).pop();
+    });
 
     if (!module) {
-      throw new Error("An invalid module type was caugth");
+      //TODO: Add an error handler
+      return "invalid";
     }
 
     return module;
