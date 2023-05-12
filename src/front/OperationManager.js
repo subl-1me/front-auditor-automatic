@@ -82,8 +82,9 @@ class OperationManager {
   }
 
   /**
-   * It checks if the choice corresponds to category/sub-category/action
-   * @param {String} choice
+   * It checks what kind of Menu Schema Module/property ("category", "subCategory", "action")
+   * corresponds the user's choice
+   * @param {String} choice User's choice to check
    * @returns null | Menu's module
    */
   choiceVerificator(choice) {

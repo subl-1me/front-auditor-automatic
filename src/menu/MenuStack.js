@@ -7,7 +7,6 @@ class MenuStack {
 
   constructor() {
     this.menus = [];
-    this.push("Home"); // Insert principal menu by default
   }
 
   push(menuType) {
