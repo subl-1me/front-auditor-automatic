@@ -6,12 +6,14 @@ class PrinterService {
    * @param {Number} copies
    * @returns {Promise<*>}
    */
-  async print(filePath, copies) {
+  async print(filePath) {
     //TODO: May be, implement a module to check if the directory is OK
     console.log("\x1b[33mEnviando a impresora: \x1b[0m" + filePath);
     try {
       const printerResponse = await printer.print(filePath, {
         side: "simplex",
+        scale: "fit",
+        orientation: "portrait",
       });
 
       return {
