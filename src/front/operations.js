@@ -71,6 +71,8 @@ class Operations {
   async getAuditoriaReports() {
     try {
       console.log(`\x1b[33mBuscando último archivo de reportes...\x1b[0m`);
+
+      // Get html data that contains report list
       const serviceResponse = await this.axiosService.getRequest(
         API_URL_AUDI_RPT_LIST
       );
@@ -79,7 +81,7 @@ class Operations {
         return serviceResponse;
       }
 
-      // Zip name to download
+      // Scrap for zip name
       const zipName = await this.getZipName(serviceResponse.htmlData);
       console.log(zipName);
 
@@ -103,7 +105,6 @@ class Operations {
       const pdfFiles = files.filter((file) => !file.path.includes(".csv"));
       const users = Object.getOwnPropertyNames(ReportsByUser);
       let printerErrors = [];
-      const reportExceptions = ["rpt_dailytransactions2", "rpt_nad_balance"];
       for (const user of users) {
         let reports = ReportsByUser[user];
         if (user === "accountant") {
@@ -118,11 +119,7 @@ class Operations {
           console.log("\x1b[33mProcesando reportes (Gerencia)...\x1b[0m");
         }
         for (const report of reports) {
-          let isExcept = reportExceptions.includes(report);
-          if (
-            pdfFiles.filter((file) => file.path.includes(report + ".pdf")) &&
-            !isExcept
-          ) {
+          if (pdfFiles.filter((file) => file.path.includes(report + ".pdf"))) {
             let printerRes;
             printerRes = await this.printerService.print(
               filesPath + "08-05-2023/" + report + ".pdf"

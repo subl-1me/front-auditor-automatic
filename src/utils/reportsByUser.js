@@ -10,7 +10,7 @@ const reportsByUser = {
     "rpt_cajeros",
     "rpt_cajeroindividual",
     "rpt_cajeros_smart",
-    "rpt_daybalance",
+    "rpt_depbalance",
     "rpt_deptransferidos",
     "rpt_nad_balance",
     "rpt_CancelAdjust",
@@ -24,6 +24,7 @@ const reportsByUser = {
     "rpt_CancelAdjust",
   ],
   salesManager: ["rpt_Early_Bird", "rpt_todaychin", "rpt_CancelAdjust"],
+  extras: ["rpt_guestbalance"],
 };
 
 const cashierReports = [""];
