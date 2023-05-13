@@ -55,7 +55,8 @@ class MenuStackService {
       return;
     }
 
-    const module = await this.operationManager.choiceVerificator(choice);
+    // get choice's module
+    const module = await this.operationManager.getChoiceModule(choice);
     if (module === "categories" || module === "subCategory") {
       this.add(choice); // Push another menu
       return;
@@ -72,7 +73,9 @@ class MenuStackService {
     }
 
     // otherwise manager must handle the action/operation selected by user
-    const responseHandler = await this.operationManager.handleAction(choice);
+    const responseHandler = await this.operationManager.performOperation(
+      choice
+    );
     this.MenuStack.pop(); // remove confirm menu
     return;
   }
