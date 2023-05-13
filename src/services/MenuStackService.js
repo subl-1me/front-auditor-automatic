@@ -55,7 +55,7 @@ class MenuStackService {
       return;
     }
 
-    const module = await this.operationManager.choiceVerificator(choice);
+    const module = await this.operationManager.performOperation(choice);
     if (module === "categories" || module === "subCategory") {
       this.add(choice); // Push another menu
       return;
