@@ -1,4 +1,5 @@
 const printer = require("pdf-to-printer");
+const { PrinterError } = require("../Errors");
 
 class PrinterService {
   /**
@@ -8,9 +9,8 @@ class PrinterService {
    */
   async print(filePath) {
     //TODO: May be, implement a module to check if the directory is OK
-    console.log("\x1b[33mEnviando a impresora: \x1b[0m" + filePath);
     try {
-      const printerResponse = await printer.print(filePath, {
+      await printer.print(filePath, {
         side: "simplex",
         scale: "fit",
         orientation: "portrait",
@@ -18,14 +18,14 @@ class PrinterService {
 
       return {
         status: "success",
-        message: "File was sended to printer successfully.",
-        printerRes: printerResponse,
       };
     } catch (err) {
       return {
         status: "error",
-        filePath: filePath,
-        errMessage: err,
+        response: {
+          reason: err,
+          filePath,
+        },
       };
     }
   }

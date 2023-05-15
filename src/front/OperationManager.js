@@ -1,84 +1,47 @@
 const Operations = require("../front/operations");
 const MenuSchema = require("../Schemas/menu.schema");
+const responseHandler = require("./operationResponseHandler");
 
+// Operation Manager class is responsible for managing the Operation Class' methods
 class OperationManager {
-  frontOperations = new Operations();
+  /*
+    Operation Manager class handles the Operation's methods by giving
+    an interfaz to interact with business logic
 
-  constructor() {}
+    Atributtes:
+      - frontOperationsInstance: An instance from Operations Class to interact with business logic.
+    
+    Methods:
+      - performOperation: It gets the result of the operation provided by the "action argument" 
+  */
+
+  frontOperationsInstance;
+
+  constructor() {
+    this.frontOperationsInstance = new Operations();
+  }
 
   /**
-   * It handles the action
+   * Gets the result of operation/action provided by an argument
    * @param {String} action A menu's choice
    */
-  async handleAction(action) {
+  async performOperation(action) {
     let operationRes;
     switch (action) {
       case "Iniciar Sesion":
-        operationRes = await this.frontOperations.login();
-        if (operationRes.status === "error") {
-          console.clear();
-          console.log(`\x1b[33mError al intentar iniciar sesión:\x1b[0m`);
-          this.printErrorMessage(operationRes.errMessage);
-          return "error";
-        }
-
-        return "success";
+        operationRes = await this.frontOperationsInstance.login();
+        return responseHandler(operationRes);
       case "Corte":
-        operationRes = await this.frontOperations.getCorteReport();
-        if (operationRes.errMessage) {
-          console.log(
-            `\x1b[33mOcurrió un error al tratar de imprimir reporte:\x1b[0m`
-          );
-          this.printErrorMessage(operationRes.errMessage);
-        }
-
-        if (operationRes.errors) {
-          console.log(
-            `\x1b[33mOcurrieron los siguientes errores durante la ejecución:\x1b[0m`
-          );
-
-          const { errors } = operationRes;
-          console.log("---");
-          errors.forEach((error) => {
-            console.log(error.errMessage);
-          });
-          console.log("---");
-        }
-
-        return "success";
-
+        operationRes = await this.frontOperationsInstance.getCorteReport();
+        return responseHandler(operationRes);
       case "Auditoria":
-        console.clear();
-        operationRes = await this.frontOperations.getAuditoriaReports();
-        if (operationRes.errMessage) {
-          console.log(`\x1b[33mOcurrió un error de autenticacion:\x1b[0m`);
-          this.printErrorMessage(operationRes.errMessage);
-        }
-        return "success";
+        operationRes = await this.frontOperationsInstance.getAuditoriaReports();
+        return responseHandler(operationRes);
       case "Cobro por operador":
-        console.clear();
-        operationRes = await this.frontOperations.getCobroPorOperadorReport();
-        console.log(operationRes);
-        if (operationRes.errMessage) {
-          console.log(
-            `\x1b[33mOcurrió un error al intentar descargar el reporte:\x1b[0m`
-          );
-          this.printErrorMessage(operationRes.errMessage);
-        }
-        return "success";
+        operationRes =
+          await this.frontOperationsInstance.getCobroPorOperadorReport();
+        return responseHandler(operationRes);
     }
-  }
-
-  printErrorMessage(message) {
-    if (
-      message ===
-      "Client network socket disconnected before secure TLS connection was established"
-    ) {
-      console.log(`\x1b[31mNo hay conexión a Internet.\x1b[0m`);
-      return;
-    }
-    console.log(`\x1b[31m${message}\x1b[0m`);
-    console.log("----------------");
   }
 
   /**
