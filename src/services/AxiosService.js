@@ -12,6 +12,14 @@ const decompress = require("decompress");
 const filesPath =
   path.normalize(process.env.userprofile) + "/Documents/reportes-front-temp/";
 
+// Erros
+const { StandardError } = require("../Errors");
+const {
+  USER_NOT_AUTHENTICATED,
+  ERROR_WRITING_FILE,
+  ERROR_CREATING_DIR,
+} = require("../ErrCodes");
+
 // Set some axios config just to make sure that
 // we'll recieve authentication token
 axios.default.defaults.withCredentials = true;
@@ -82,60 +90,16 @@ class AxiosService {
       },
     });
 
-    const responseHeader = res.request._header;
-    const isTokenExpired = responseHeader.includes(
-      "/WHS-PMS/Account/Login.aspx"
-    );
-
+    const isTokenExpired = this.doesResponseRedirects(res);
     if (isTokenExpired) {
-      return {
-        status: "error",
-        errMessage: "Sesión expirada. Vuelva a ingresar sesión.",
-      };
+      throw new StandardError(
+        "Sesion expirada, vuelve a iniciar sesion.",
+        USER_NOT_AUTHENTICATED,
+        "informative"
+      );
     }
 
-    return {
-      status: "success",
-      htmlData: res.data,
-    };
-    const resSegments = res.data.split("\r\n");
-
-    // first remove an insane value code
-    const shortRes = resSegments.filter(
-      (segment) => !segment.includes("__VIEWSTATE")
-    );
-    const liHtmlElementsArray = shortRes.filter((segment) =>
-      segment.includes('<a class="rtIn"')
-    );
-
-    // uses '-2' because the API prints an entire list of old reports
-    // so [array.length - 2] always is the most recent AUD reports
-    const liElementToProcess =
-      liHtmlElementsArray[liHtmlElementsArray.length - 2];
-    const sanitizedLiElement = liElementToProcess
-      .split("\\")
-      .filter((segment) => segment.includes(".zip"))
-      .shift();
-    const zipReportId = sanitizedLiElement.split('"').shift();
-
-    // const zipReportId =
-    //   "CECJ" +
-    //   htmlElementSegments.filter((segment) => segment.includes(".zip"));
-
-    const newRes = await this.axiosScrapping({
-      url: API_URL_AUDI_RPT + zipReportId,
-      responseType: "arraybuffer",
-    });
-
-    fs.writeFileSync(filesPath + zipReportId, newRes.data);
-    const files = await decompress(
-      filesPath + zipReportId,
-      filesPath + "08-05-2023"
-    );
-
-    // console.log(files.filter((file) => !file.includes(".cvs")));
-    const sanitizedFiles = files.filter((file) => !file.path.includes(".csv"));
-    return sanitizedFiles;
+    return res.data;
   }
 
   /**
@@ -156,18 +120,13 @@ class AxiosService {
       },
     });
 
-    console.log(res);
-
-    const responseHeader = res.request._header;
-    const isTokenExpired = responseHeader.includes(
-      "/WHS-PMS/Account/Login.aspx"
-    );
-
+    const isTokenExpired = this.doesResponseRedirects(res);
     if (isTokenExpired) {
-      return {
-        status: "error",
-        errMessage: "Sesión expirada. Vuelva a ingresar sesión.",
-      };
+      throw new StandardError(
+        "Sesion expirada, vuelve a iniciar sesion.",
+        USER_NOT_AUTHENTICATED,
+        "informative"
+      );
     }
 
     if (!fs.existsSync(filesPath)) {
@@ -189,23 +148,34 @@ class AxiosService {
 
       writer.on(
         "error",
-        resolve({
-          status: "error",
-          errMessage: "Error al intentar descargar el archivo: " + filename,
-        })
+        reject(
+          new StandardError(
+            "Ocurrió un error tratando de descargar un archivo",
+            ERROR_WRITING_FILE,
+            "informative"
+          )
+        )
       );
     });
+  }
+
+  /**
+   * It checks if the http response redirects to login page
+   * @param {*} response Axios http response
+   */
+  doesResponseRedirects(response) {
+    const responseHeader = response.request._header;
+    return responseHeader.includes("/WHS-PMS/Account/Login.aspx");
   }
 
   async createDir(path) {
     return new Promise((resolve, reject) => {
       fs.mkdir(path, (err) => {
-        console.log(err);
         if (err) {
-          resolve(false);
+          reject(new StandardError(err.message, ERROR_CREATING_DIR, "error"));
         }
 
-        resolve(true);
+        resolve();
       });
     });
   }

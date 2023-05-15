@@ -94,7 +94,6 @@ class Confirm extends Menu {
     ];
 
     const response = await this.inquirer.prompt(questionList);
-    console.log(response.confirm);
     return response.confirm;
   }
 }

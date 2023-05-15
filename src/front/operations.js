@@ -9,6 +9,12 @@ const decompress = require("decompress");
 const filesPath =
   PATH.normalize(process.env.userprofile) + "/Documents/reportes-front-temp/";
 
+const { StandardError, PrinterError } = require("../Errors");
+const { DECOMPRESS_ERROR } = require("../ErrCodes");
+
+// extras
+const Spinnies = require("spinnies");
+
 // ENV VARS
 const {
   API_URL_LOGIN,
@@ -17,12 +23,12 @@ const {
   API_URL_AUDI_RPT_LIST,
   API_URL_AUDI_RPT,
   API_URL_COBRO_RPT_GENERATE,
-  API_URL_COBRO_RPT_DOWNLOAD,
 } = process.env;
 
 class Operations {
   axiosService = new AxiosService();
   printerService = new PrinterService();
+  spinnies = new Spinnies();
 
   constructor() {
     this.config = ConfigService.getConfig();
@@ -35,11 +41,13 @@ class Operations {
    */
   async login() {
     const userCredentials = await this.waitForCredentials();
+    this.spinnies.add("spinner-1", { text: "Login..." });
     const serviceResponse = await this.axiosService.postRequest(
       API_URL_LOGIN,
       userCredentials
     );
 
+    this.spinnies.remove("spinner-1");
     return serviceResponse;
   }
 
@@ -70,81 +78,86 @@ class Operations {
 
   async getAuditoriaReports() {
     try {
-      console.log(`\x1b[33mBuscando último archivo de reportes...\x1b[0m`);
-
+      // console.log(`\x1b[33mBuscando último archivo de reportes...\x1b[0m`);
+      this.spinnies.add("spinner-1", {
+        text: "Looking for last report file...",
+      });
       // Get html data that contains report list
-      const serviceResponse = await this.axiosService.getRequest(
+      const htmlData = await this.axiosService.getRequest(
         API_URL_AUDI_RPT_LIST
       );
 
-      if (serviceResponse.status === "error") {
-        return serviceResponse;
-      }
-
       // Scrap for zip name
-      const zipName = await this.getZipName(serviceResponse.htmlData);
-      console.log(zipName);
+      const zipName = await this.getZipName(htmlData);
 
-      console.log(`\x1b[33mDescargando...\x1b[0m`);
-      const downloadRequest = await this.axiosService.axiosScrapping({
+      this.spinnies.update("spinner-1", { text: "Downloading..." });
+      // console.log(`\x1b[33mDescargando reporte (${zipName})...\x1b[0m`);
+      // download ZIP file
+      const zipFile = await this.axiosService.axiosScrapping({
         url: API_URL_AUDI_RPT + zipName,
         responseType: "arraybuffer",
       });
 
+      // Check if directory is already created
       if (!fs.existsSync(filesPath)) {
         fs.mkdirSync(filesPath);
       }
 
-      console.log(`\x1b[33mDescomprimiendo...\x1b[0m`);
-      fs.writeFileSync(filesPath + zipName, downloadRequest.data);
+      // console.log(`\x1b[33mDescomprimiendo...\x1b[0m`);
+      this.spinnies.update("spinner-1", { text: "Decompressing & saving..." });
+      // decompress zip file and save in files path
+      fs.writeFileSync(filesPath + zipName, zipFile.data);
       const files = await decompress(
         filesPath + zipName,
         filesPath + "08-05-2023"
       );
 
-      const pdfFiles = files.filter((file) => !file.path.includes(".csv"));
+      this.spinnies.update("spinner-1", { text: "File saved." });
+      if (!files) {
+        throw new StandardError(
+          "Ocurrió un error al intentar descomprimir archivo de reportes, intente de nuevo. Si el error persiste debe imprimir manualmente.",
+          DECOMPRESS_ERROR,
+          "error"
+        );
+      }
+
+      // filter only .pdf to avoid problems with printer
+      const pdfFiles = files.filter((file) => file.path.includes(".pdf"));
       const users = Object.getOwnPropertyNames(ReportsByUser);
       let printerErrors = [];
+      // console.log("\x1b[33mEnviando reportes a impresora...\x1b[0m");
+      this.spinnies.succeed("spinner-1");
       for (const user of users) {
         let reports = ReportsByUser[user];
-        if (user === "accountant") {
-          console.log("\x1b[33mProcesando reportes (Contadora)... \x1b[0m");
-        }
-        if (user === "salesManager") {
-          console.log(
-            "\x1b[33mProcesando reportes (Gerencia de ventas)...\x1b[0m"
-          );
-        }
-        if (user === "manager") {
-          console.log("\x1b[33mProcesando reportes (Gerencia)...\x1b[0m");
-        }
+        this.spinnies.add("spinner-1", { text: "Printing: " });
         for (const report of reports) {
           if (pdfFiles.filter((file) => file.path.includes(report + ".pdf"))) {
             let printerRes;
+            this.spinnies.update("spinner-1", {
+              text: "Printing: " + report,
+            });
             printerRes = await this.printerService.print(
               filesPath + "08-05-2023/" + report + ".pdf"
             );
-
-            if (printerRes.errMessage === "No such file") {
-              console.log(
-                `\x1b[31mNo se encontró el archivo: ${report}.pdf.\x1b[0m`
-              );
-            }
-
-            if (printerRes.status === "Error") {
+            if (printerRes.status !== "success") {
+              console.log(`Error al imprimir`);
               printerErrors.push(printerRes);
+              console.log("---");
             }
           }
         }
       }
 
+      this.spinnies.succeed("spinner-1", {
+        text: "All reports where printed successfully.",
+      });
       return {
         status: "success",
         printerErrors: printerErrors,
       };
     } catch (err) {
-      console.log(err);
-      throw new Error(err.message);
+      this.spinnies.stopAll("fail");
+      return err;
     }
   }
 
@@ -176,113 +189,64 @@ class Operations {
    * @returns
    */
   async getCorteReport() {
-    let promises = [];
-    promises.push(
-      await this.axiosService.getRequestDownload(
-        API_URL_REPORT + "=" + this.config.lastUsernameSession + "|AND;",
-        "rpt_cajeros"
-      )
-    );
-    promises.push(
-      await this.axiosService.getRequestDownload(
-        API_URL_REPORT_INDV + "=" + this.config.lastUsernameSession + "|AND;",
-        "rpt_cajeroindividual"
-      )
-    );
+    try {
+      let promises = [];
+      promises.push(
+        await this.axiosService.getRequestDownload(
+          API_URL_REPORT + "=" + this.config.lastUsernameSession + "|AND;",
+          "rpt_cajeros"
+        )
+      );
+      promises.push(
+        await this.axiosService.getRequestDownload(
+          API_URL_REPORT_INDV + "=" + this.config.lastUsernameSession + "|AND;",
+          "rpt_cajeroindividual"
+        )
+      );
 
-    const filesPathsList = await Promise.all(promises)
-      .then((responses) => {
-        const errors = responses.filter(
-          (response) => response.status === "error"
-        );
-        if (errors.length > 0) {
+      const filesPathsList = await Promise.all(promises)
+        .then((responses) => {
+          const errors = responses.filter(
+            (response) => response.status === "error"
+          );
+          if (errors.length > 0) {
+            return {
+              status: "error",
+              errors: errors,
+            };
+          }
+          return responses.map((response) => response.filePath);
+        })
+        .catch((err) => {
           return {
             status: "error",
-            errors: errors,
+            errMessage: err.message,
           };
-        }
-        return responses.map((response) => response.filePath);
-      })
-      .catch((err) => {
+        });
+
+      if (filesPathsList.status === "error") {
         return {
           status: "error",
-          errMessage: err.message,
+          errMessage: filesPathsList.errMessage,
+          errors: filesPathsList.errors,
         };
-      });
+      }
 
-    if (filesPathsList.status === "error") {
-      return {
-        status: "error",
-        errMessage: filesPathsList.errMessage,
-        errors: filesPathsList.errors,
-      };
-    }
+      console.log("----");
+      let printerPromises = [];
+      for (let path of filesPathsList) {
+        path = PATH.normalize(path);
+        printerPromises.push(await this.printerService.print(path));
+      }
 
-    console.log("----");
-    let printerPromises = [];
-    for (let path of filesPathsList) {
-      path = PATH.normalize(path);
-      printerPromises.push(await this.printerService.print(path));
-    }
-
-    try {
       const printerResponses = await Promise.all(printerPromises);
       return {
         status: "success",
         printerRes: printerResponses,
       };
     } catch (err) {
-      console.log(err);
-      return {
-        status: "error",
-        errMessage: err.message,
-      };
+      return err;
     }
-
-    // console.log(serviceResponse.data);
-    // return;
-    // const waitForReports = async () => {
-    //   let promises = [];
-    //   promises.push(await this.axiosService.getRequest(API_URL_REPORT));
-    //   promises.push(await this.axiosService.getRequest(API_URL_REPORT_INDV));
-    //   Promise.all(promises)
-    //     .then((res) => {
-    //       console.log(res);
-    //     })
-    //     .catch((err) => {
-    //       console.log(err);
-    //       return err;
-    //     });
-    // };
-    // const reportsResponse = await waitForReports();
-    // console.log(reportsResponse);
-    // return;
-    // const serviceResponse = await this.axiosService.getRequest(
-    //   API_URL_REPORT_INDV
-    // );
-    // if (serviceResponse.status === "error") {
-    //   return serviceResponse;
-    // }
-    // console.log("\x1b[32mReporte listo.\x1b[0m");
-    // const questionList = [
-    //   {
-    //     type: "confirm",
-    //     name: "confirm",
-    //     message: "Recibiste efectivo?",
-    //   },
-    // ];
-    // const input = await this.inquirer.prompt(questionList);
-    // // if true, printer must print a copy of the report
-    // let res;
-    // if (input.confirm) {
-    //   //TODO: Implement printer
-    //   res = await this.printerService.print(serviceResponse.fileDirectory, 2);
-    // } else {
-    //   res = await this.printerService.print(serviceResponse.fileDirectory, 1);
-    // }
-    // console.clear();
-    // console.log("\x1b[32m%s.\x1b[0m", res.message);
-    // return res;
   }
 
   /**
