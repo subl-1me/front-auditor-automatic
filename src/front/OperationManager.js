@@ -30,6 +30,7 @@ class OperationManager {
     switch (action) {
       case "Iniciar Sesion":
         operationRes = await this.frontOperationsInstance.login();
+        console.log(operationRes);
         return responseHandler(operationRes);
       case "Corte":
         operationRes = await this.frontOperationsInstance.getCorteReport();
@@ -37,7 +38,7 @@ class OperationManager {
       case "Auditoria":
         operationRes = await this.frontOperationsInstance.getAuditoriaReports();
         return responseHandler(operationRes);
-      case "Cobro por operador":
+      case "Cobro por operador": //TODO: Add implementation
         operationRes =
           await this.frontOperationsInstance.getCobroPorOperadorReport();
         return responseHandler(operationRes);

@@ -1,7 +1,6 @@
 const responseHandler = (response) => {
   const { message, status, errCode, printerErrors } = response;
   if (printerErrors && printerErrors.length > 0) {
-    console.clear();
     console.log(
       `\x1b[31mLos siguientes archivos no pudieron ser impresos:\x1b[0m`
     );

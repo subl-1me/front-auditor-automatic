@@ -62,7 +62,6 @@ class Reports extends Menu {
         message: "Elija un tipo de reporte:",
         choices: [
           "Corte",
-          "Cobro por operador",
           "Auditoria",
           "Ama de llaves",
           new inquirer.Separator(),

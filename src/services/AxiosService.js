@@ -25,8 +25,7 @@ const {
 axios.default.defaults.withCredentials = true;
 
 // ENV VARS
-const { BUTTON_CONTEXT, VIEWSTATE, API_URL_REPORT, API_URL_AUDI_RPT } =
-  process.env;
+const { API_URL_LOGIN } = process.env;
 
 class AxiosService {
   jar = new CookieJar();
@@ -39,32 +38,53 @@ class AxiosService {
     }),
   });
 
+  async login(body) {
+    try {
+      const res = await this.axiosScrapping.post(API_URL_LOGIN, body);
+      console.log(res);
+
+      const isTokenExpired = this.doesResponseRedirects(res);
+      if (isTokenExpired) {
+        throw new StandardError(
+          "Sesion expirada, vuelve a iniciar sesion.",
+          USER_NOT_AUTHENTICATED,
+          "informative"
+        );
+      }
+
+      return res;
+    } catch (err) {
+      return {
+        status: "error",
+        errMessage: err.message,
+      };
+    }
+  }
+
   /**
    * @description Creates a post request to API
    * @param {String} url Contains API_URL
    * @param {Array<*>} body Contains body params
    */
-  async postRequest(url, body) {
+  async postRequest(url, body, requiresAuth = false) {
     //TODO: Add this to the end of the report URL: =HTJUGALDEA|AND
     try {
-      let formData;
-      formData = this.setupFormData(body);
-
-      const res = await this.axiosScrapping.post(url, formData);
-      const ASPXAUTH = ConfigService.parseAuthCookies(res.request._header);
-      if (!ASPXAUTH) {
-        return {
-          status: "error",
-          errMessage: "Contraseña o usuario invalidos.",
-        };
-      }
-
-      ConfigService.setAuthConfig({
-        lastUsernameSession: body.username,
-        ASPXAUTH,
+      const res = await this.axiosScrapping({
+        url: url,
+        method: "POST",
+        body: body,
+        headers: {
+          Cookie:
+            ".ASPXAUTH=" +
+            ConfigService.ConfigInstance.getConfig().ASPXAUTH +
+            "; " +
+            "ASP.NET_SessionId=5ag503ou0yg1tjhrbwmsi1x0; " +
+            "acopendivids=" +
+            "ctl00_ctl00_content_SingleContent_SSRSRpt3;",
+          "content-type": "application/x-www-form-urlencoded; charset=utf-8",
+        },
       });
-
-      return "success";
+      return res;
     } catch (err) {
       return {
         status: "error",
@@ -201,22 +221,6 @@ class AxiosService {
         })
       );
     });
-  }
-
-  /**
-   * Creates a new Form Data with body recieved
-   * @param {Array<*>} body Contains data params
-   * @returns Form Data
-   */
-  setupFormData(body) {
-    let formData = new FormData();
-    const { username, password } = body;
-    formData.append("__VIEWSTATE", VIEWSTATE);
-    formData.append("ctl00$MainContent$LoginUser$LoginButton", BUTTON_CONTEXT);
-    formData.append("ctl00$MainContent$LoginUser$UserName", username);
-    formData.append("ctl00$MainContent$LoginUser$Password", password);
-
-    return formData;
   }
 }
 
