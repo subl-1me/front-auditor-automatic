@@ -24,11 +24,11 @@ class Directory {
   }
 
   async createDir(path) {
-    console.log("Creating new dir:", path);
     if (fsSync.existsSync(path)) {
       return;
     }
 
+    console.log("Creating new dir:", path);
     return await fs.mkdir(path);
   }
 
@@ -41,7 +41,7 @@ class Directory {
   async saveFile(path, data, encoding) {
     console.log("saving path:", path);
     // this.initSpinner(`Saving zip file...`);
-    const writer = await fs.writeFile(path, data, encoding);
+    await fs.writeFile(path, data, encoding);
     // this.stopSpinner("File saved.");
     return;
   }

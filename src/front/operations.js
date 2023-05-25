@@ -1,13 +1,17 @@
 const AxiosService = require("../services/AxiosService");
 const PrinterService = require("../services/printerService");
 const ConfigService = require("../services/ConfigService");
+const DirectoryInstance = require("../utils/directory");
 const inquirer = require("inquirer");
 const fs = require("fs");
-const PATH = require("path");
+const path = require("path");
 const ReportsByUser = require("../utils/reportsByUser");
 const decompress = require("decompress");
-const filesPath =
-  PATH.normalize(process.env.userprofile) + "/Documents/reportes-front-temp/";
+const mainFilesDir = path.join(
+  path.normalize(process.env.userprofile),
+  "Documents/reportes-front-temp"
+);
+const unzipper = require("unzipper");
 
 const { StandardError, PrinterError } = require("../Errors");
 const { DECOMPRESS_ERROR } = require("../ErrCodes");
@@ -102,101 +106,203 @@ class Operations {
     });
   }
 
+  async saveData(zipName) {
+    const response = await this.axiosService.axiosScrapping({
+      url: API_URL_AUDI_RPT + zipName,
+      responseType: "stream",
+    });
+    console.log(response.data);
+
+    // await DirectoryInstance.createDir(mainFilesDir);
+    console.log(zipName);
+    const outputStream = fs.createWriteStream(mainFilesDir + `/${zipName}`);
+    response.data.pipe(outputStream);
+
+    return new Promise((resolve, reject) => {
+      outputStream.on("finish", resolve);
+      outputStream.on("error", (err) => {
+        console.log("Ocurrio un error al descargar archiv");
+        reject(err);
+      });
+    });
+  }
+
+  async extractZipFIle(zipName) {
+    // await DirectoryInstance.createDir(mainFilesDir + "/test");
+    await fs
+      .createReadStream(mainFilesDir + `/${zipName}`)
+      .pipe(unzipper.Extract({ path: mainFilesDir + "/test" }))
+      .promise();
+  }
+
+  async runPrinter(pdfFiles) {
+    console.log("total files:");
+    console.log(pdfFiles);
+    // filter only .pdf to avoid problems with printer
+    const users = Object.getOwnPropertyNames(ReportsByUser);
+    let printerErrors = [];
+    // console.log("\x1b[33mEnviando reportes a impresora...\x1b[0m");
+    for (const user of users) {
+      let reports = ReportsByUser[user];
+      // this.spinnies.add("spinner-2", { text: "Sending to printer: " });
+      for (const report of reports) {
+        if (pdfFiles.filter((file) => file.includes(report + ".pdf"))) {
+          let printerRes;
+          console.log(`Sending to printer: ${report}`);
+          // this.spinnies.update("spinner-2", {
+          //   text: "Sending to printer: " + report,
+          // });
+          printerRes = await this.printerService.print(
+            mainFilesDir + "/test/" + report + ".pdf"
+          );
+          if (printerRes.status !== "success") {
+            console.log(`Error al imprimir`);
+            printerErrors.push(printerRes);
+            console.log("---");
+          }
+        }
+      }
+    }
+
+    // this.spinnies.succeed("spinner-2", {
+    //   text: "All reports where printed successfully.",
+    // });
+    console.log("FINALIZED");
+    return {
+      status: "success",
+      printerErrors: printerErrors,
+    };
+  }
+
   async getAuditoriaReports() {
     try {
-      // console.log(`\x1b[33mBuscando último archivo de reportes...\x1b[0m`);
       this.spinnies.add("spinner-1", {
         text: "Searching for last Front reports...",
       });
+      console.log("looking reportes...");
+
       // Get html data that contains report list
       const htmlData = await this.axiosService.getRequest(
         API_URL_AUDI_RPT_LIST
       );
 
-      // Scrap for zip name
       const zipName = await this.getZipName(htmlData);
-
-      // Check if directory is already created
-      if (!fs.existsSync(filesPath)) {
-        fs.mkdir(filesPath, (err) => {
-          if (err) {
-            throw new Error(err.message);
-          }
-        });
-      }
-
-      this.spinnies.update("spinner-1", {
-        text: "Downloading main file" + ` (${zipName})...`,
-      });
-      // download ZIP file
-      const zipFile = await this.axiosService.axiosScrapping({
+      const response = await this.axiosService.axiosScrapping({
         url: API_URL_AUDI_RPT + zipName,
         responseType: "arraybuffer",
       });
 
+      // Scrap for zip name
+      // this.spinnies.update("spinner-1", {
+      //   text: "Downloading main file" + ` (${zipName})...`,
+      // });
+      // download ZIP file
+
+      // await this.saveData(zipName);
+      // await this.extractZipFIle(zipName);
+      // const pdfFiles = await new Promise((resolve, reject) => {
+      //   fs.readdir(mainFilesDir + "/test", (err, files) => {
+      //     if (err) {
+      //       console.log("An error occured trying to open pdf files.");
+      //       reject(err);
+      //     }
+      //     resolve(files.filter((file) => file.includes(".pdf")));
+      //   });
+      // });
+
+      // await this.runPrinter(pdfFiles);
+      // await this.runPrinter();
+
+      // Remove ZIP from local
+      // const removeFileResponse = await DirectoryInstance.deleteFile(mainFilesDir);
+      // if (removeFileResponse && removeFileResponse.status === "error") {
+      //   console.log(
+      //     "Error trying to delete temporal ZIP file. Try to remove it manually."
+      //   );
+      // }
+
+      const directoryResponse = await DirectoryInstance.createDir(mainFilesDir);
+      if (directoryResponse && directoryResponse.status === "error") {
+        // Something went wrong trying to create dir
+        return directoryResponse;
+      }
+
+      const reportsDir = path.join(mainFilesDir, "08-05-2023");
+      const directoryResponse2 = await DirectoryInstance.createDir(reportsDir);
+      if (directoryResponse2 && directoryResponse2.status === "error") {
+        return directoryResponse2;
+      }
       this.spinnies.update("spinner-1", {
         text: "Saving file...",
       });
-      // decompress zip file and save in files path
-      fs.writeFile(filesPath + zipName, zipFile.data, "binary", (err) => {
-        if (err) {
-          console.log(err);
-          this.spinnies.fail("spinner-1", {
-            text: "An error was occured trying to save main file.",
-          });
-          throw new Error(err.message);
-        }
-      });
-      this.spinnies.update("spinner-1", { text: "Decompressing..." });
-      const files = await decompress(
-        filesPath + zipName,
-        filesPath + "08-05-2023"
+
+      const zipPath = path.join(mainFilesDir, zipName);
+      const saveFilePromise = await DirectoryInstance.saveFile(
+        zipPath,
+        response.data,
+        "binary"
       );
-      if (!files) {
-        throw new StandardError(
-          "An unexpected error was caugth decompressing main reports file. Try to print it manually.",
-          DECOMPRESS_ERROR,
-          "error"
-        );
+      if (saveFilePromise && saveFilePromise.status === "error") {
+        this.spinnies.fail("spinner-1", {
+          text: "An error was occured trying to save main file.",
+        });
+        return saveFilePromise;
       }
 
-      this.spinnies.update("spinner-1", { text: "File saved successfully." });
-      // filter only .pdf to avoid problems with printer
-      const pdfFiles = files.filter((file) => file.path.includes(".pdf"));
-      const users = Object.getOwnPropertyNames(ReportsByUser);
-      let printerErrors = [];
-      // console.log("\x1b[33mEnviando reportes a impresora...\x1b[0m");
-      this.spinnies.succeed("spinner-1");
-      for (const user of users) {
-        let reports = ReportsByUser[user];
-        this.spinnies.add("spinner-1", { text: "Printing: " });
-        for (const report of reports) {
-          if (pdfFiles.filter((file) => file.path.includes(report + ".pdf"))) {
-            let printerRes;
-            this.spinnies.update("spinner-1", {
-              text: "Printing: " + report,
-            });
-            printerRes = await this.printerService.print(
-              filesPath + "08-05-2023/" + report + ".pdf"
-            );
-            if (printerRes.status !== "success") {
-              console.log(`Error al imprimir`);
-              printerErrors.push(printerRes);
-              console.log("---");
+      // case file saved successfully
+      this.spinnies.update("spinner-1", { text: "Decompressing..." });
+
+      console.log(zipPath);
+      const decompressResult = decompress(zipPath, reportsDir).then(
+        async (files) => {
+          // Remove ZIP from local
+          // const removeFileResponse = await DirectoryInstance.deleteFile(mainFilesDir);
+          // if (removeFileResponse && removeFileResponse.status === "error") {
+          //   console.log(
+          //     "Error trying to delete temporal ZIP file. Try to remove it manually."
+          //   );
+          // }
+
+          // filter only .pdf to avoid problems with printer
+          const pdfFiles = files.filter((file) => file.path.includes(".pdf"));
+          const users = Object.getOwnPropertyNames(ReportsByUser);
+          let printerErrors = [];
+          // console.log("\x1b[33mEnviando reportes a impresora...\x1b[0m");
+          for (const user of users) {
+            let reports = ReportsByUser[user];
+            this.spinnies.add("spinner-2", { text: "Printing: " });
+            for (const report of reports) {
+              if (
+                pdfFiles.filter((file) => file.path.includes(report + ".pdf"))
+              ) {
+                let pdfPath = path.join(reportsDir, report + ".pdf");
+                let printerRes;
+                this.spinnies.update("spinner-2", {
+                  text: "Printing: " + report,
+                });
+                printerRes = await this.printerService.print(pdfPath);
+                if (printerRes.status !== "success") {
+                  console.log(`Error al imprimir`);
+                  printerErrors.push(printerRes);
+                  console.log("---");
+                }
+              }
             }
           }
-        }
-      }
 
-      this.spinnies.succeed("spinner-1", {
-        text: "All reports where printed successfully.",
-      });
-      return {
-        status: "success",
-        printerErrors: printerErrors,
-      };
+          this.spinnies.succeed("spinner-2", {
+            text: "All reports where printed successfully.",
+          });
+          return {
+            status: "success",
+            printerErrors: printerErrors,
+          };
+        }
+      );
+      return decompressResult;
     } catch (err) {
       this.spinnies.stopAll("fail");
+      console.log(err);
       return {
         status: "error",
         message: err.message,
@@ -434,7 +540,7 @@ class Operations {
         )
       );
 
-      const filesPathsList = await Promise.all(promises)
+      const mainFilesDirsList = await Promise.all(promises)
         .then((responses) => {
           const errors = responses.filter(
             (response) => response.status === "error"
@@ -445,7 +551,7 @@ class Operations {
               errors: errors,
             };
           }
-          return responses.map((response) => response.filePath);
+          return responses.map((response) => response.mainFilesDir);
         })
         .catch((err) => {
           return {
@@ -454,18 +560,18 @@ class Operations {
           };
         });
 
-      if (filesPathsList.status === "error") {
+      if (mainFilesDirsList.status === "error") {
         return {
           status: "error",
-          errMessage: filesPathsList.errMessage,
-          errors: filesPathsList.errors,
+          errMessage: mainFilesDirsList.errMessage,
+          errors: mainFilesDirsList.errors,
         };
       }
 
       console.log("----");
       let printerPromises = [];
-      for (let path of filesPathsList) {
-        path = PATH.normalize(path);
+      for (let path of mainFilesDirsList) {
+        path = path.normalize(path);
         printerPromises.push(await this.printerService.print(path));
       }
 

@@ -37,6 +37,7 @@ class OperationManager {
         return responseHandler(operationRes);
       case "Auditoria":
         operationRes = await this.frontOperationsInstance.getAuditoriaReports();
+        console.log(operationRes);
         return responseHandler(operationRes);
       case "Cobro por operador": //TODO: Add implementation
         operationRes =
@@ -61,6 +62,10 @@ class OperationManager {
         return true;
       }
     });
+
+    if (!module) {
+      throw new Error("An invalid property was caugth in Menu selection");
+    }
 
     return module;
   }

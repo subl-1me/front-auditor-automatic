@@ -81,7 +81,7 @@ class AxiosService {
             "ASP.NET_SessionId=5ag503ou0yg1tjhrbwmsi1x0; " +
             "acopendivids=" +
             "ctl00_ctl00_content_SingleContent_SSRSRpt3;",
-          "content-type": "application/x-www-form-urlencoded; charset=utf-8",
+          "content-type": "application/x-www-form-urlencoded; charset=utf-8 ",
         },
       });
       return res;
