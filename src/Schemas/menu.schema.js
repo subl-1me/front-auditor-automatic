@@ -1,5 +1,5 @@
 const MenuSchema = {
-  categories: ["Reportes", "Revisar PIT"],
+  categories: ["Reportes"],
   subCategories: [],
   actions: [
     "Corte",
@@ -7,6 +7,7 @@ const MenuSchema = {
     "Ama de llaves",
     "Iniciar Sesion",
     "Auditoria",
+    "Revisar PIT",
   ],
 };
 

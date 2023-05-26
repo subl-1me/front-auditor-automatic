@@ -19,6 +19,7 @@ const FormData = require("form-data");
 
 // extras
 const Spinnies = require("spinnies");
+const { timeStamp } = require("console");
 
 // ENV VARS
 const {
@@ -28,6 +29,7 @@ const {
   API_URL_AUDI_RPT_LIST,
   API_URL_AUDI_RPT,
   API_URL_COBRO_RPT_GENERATE,
+  API_URL_CUSTOMER_LIST_GLOBAL,
   VIEWSTATE,
   BUTTON_CONTEXT,
 } = process.env;
@@ -52,7 +54,6 @@ class Operations {
 
     let formData = this.setupFormData(userCredentials);
 
-    console.log(formData);
     const serviceResponse = await this.axiosService.login(formData);
     if (serviceResponse.status === "error") {
       this.spinnies.fail("spinner-1", { text: serviceResponse.errMessage });
@@ -79,6 +80,33 @@ class Operations {
 
     this.spinnies.remove("spinner-1");
     return serviceResponse;
+  }
+
+  async checkPit() {
+    const res = await this.axiosService.getRequest(
+      API_URL_CUSTOMER_LIST_GLOBAL
+    );
+
+    // transform jsonp from jQueryCallback into JSON
+    const regularExpression = /jQuery\d+_\d+/;
+    const jqueryCallbackName = res.match(regularExpression)[0];
+    const jsonText = res.replace(jqueryCallbackName + "(", "").slice(0, -2);
+
+    // filter some customers that have company's credits
+    // and virtual reservations that doesn't have payments
+    const customers = JSON.parse(jsonText)
+      .rows.filter((customer) => customer.Room !== "FVM01")
+      .filter((customer) => customer.Room !== "AJFMV01")
+      .filter((customer) => !customer.company.includes("NOKTOS-C"))
+      .filter((customer) => !customer.company.includes("AUTOMATYCO"))
+      .filter((customer) => customer.Room !== "INTERFACE")
+      .filter((customer) => !customer.company.includes("RGIS"));
+
+    console.log(customers);
+    return {
+      status: "success",
+      message: "fuck",
+    };
   }
 
   async getZipName(htmlData) {

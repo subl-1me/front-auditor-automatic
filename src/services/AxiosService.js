@@ -41,7 +41,6 @@ class AxiosService {
   async login(body) {
     try {
       const res = await this.axiosScrapping.post(API_URL_LOGIN, body);
-      console.log(res);
 
       const isTokenExpired = this.doesResponseRedirects(res);
       if (isTokenExpired) {
@@ -98,7 +97,7 @@ class AxiosService {
    * @param {String} url Front endpoint
    * @throws An http error
    */
-  async getRequest(url) {
+  async getRequest(url, options) {
     const res = await this.axiosScrapping({
       url: url,
       headers: {

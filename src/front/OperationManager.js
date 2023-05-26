@@ -23,27 +23,37 @@ class OperationManager {
 
   /**
    * Gets the result of operation/action provided by an argument
-   * @param {String} action A menu's choice
+   * @param {String} operation A menu's choice
    */
-  async performOperation(action) {
+  async performOperation(operation) {
     let operationRes;
-    switch (action) {
+    switch (operation) {
       case "Iniciar Sesion":
         operationRes = await this.frontOperationsInstance.login();
-        console.log(operationRes);
-        return responseHandler(operationRes);
+        break;
       case "Corte":
         operationRes = await this.frontOperationsInstance.getCorteReport();
-        return responseHandler(operationRes);
+        break;
       case "Auditoria":
         operationRes = await this.frontOperationsInstance.getAuditoriaReports();
-        console.log(operationRes);
-        return responseHandler(operationRes);
+        break;
       case "Cobro por operador": //TODO: Add implementation
         operationRes =
           await this.frontOperationsInstance.getCobroPorOperadorReport();
-        return responseHandler(operationRes);
+        break;
+      case "Revisar PIT":
+        operationRes = await this.frontOperationsInstance.checkPit();
+        break;
+      default:
+        console.log(`An invalid operation was caugth: ${operation}`);
+        return responseHandler({
+          status: "error",
+          message: "INVALID OPERATION WAS CAUGHT",
+          operation: operation,
+        });
     }
+
+    return responseHandler(operationRes);
   }
 
   /**
