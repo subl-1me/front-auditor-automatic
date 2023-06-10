@@ -1,4 +1,4 @@
-const { Home, Reports, Confirm } = require("./Menu");
+const { Home, Reports, Confirm } = require("./menu");
 
 /**
  * @returns It handles the creation of menus' instances

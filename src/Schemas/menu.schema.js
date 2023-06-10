@@ -8,6 +8,7 @@ const MenuSchema = {
     "Iniciar Sesion",
     "Auditoria",
     "Revisar PIT",
+    "Run noktos proccess",
   ],
 };
 

@@ -44,6 +44,9 @@ class OperationManager {
       case "Revisar PIT":
         operationRes = await this.frontOperationsInstance.checkPit();
         break;
+      case "Run noktos proccess":
+        operationRes = await this.frontOperationsInstance.startNoktosProcess();
+        break;
       default:
         console.log(`An invalid operation was caugth: ${operation}`);
         return responseHandler({

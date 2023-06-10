@@ -4,6 +4,7 @@ const FormData = require("form-data");
 const { HttpsCookieAgent } = require("http-cookie-agent/http");
 const { CookieJar } = require("tough-cookie");
 const ConfigService = require("./ConfigService");
+const https = require("follow-redirects").https;
 const fs = require("fs");
 const path = require("path");
 const reportNames = require("../utils/reportsByUser");
@@ -11,6 +12,8 @@ const AdmZip = require("adm-zip");
 const decompress = require("decompress");
 const filesPath =
   path.normalize(process.env.userprofile) + "/Documents/reportes-front-temp/";
+
+const zlib = require("zlib");
 
 // Erros
 const { StandardError } = require("../Errors");
@@ -42,15 +45,6 @@ class AxiosService {
     try {
       const res = await this.axiosScrapping.post(API_URL_LOGIN, body);
 
-      const isTokenExpired = this.doesResponseRedirects(res);
-      if (isTokenExpired) {
-        throw new StandardError(
-          "Sesion expirada, vuelve a iniciar sesion.",
-          USER_NOT_AUTHENTICATED,
-          "informative"
-        );
-      }
-
       return res;
     } catch (err) {
       return {
@@ -71,19 +65,25 @@ class AxiosService {
       const res = await this.axiosScrapping({
         url: url,
         method: "POST",
-        body: body,
+        data: body,
         headers: {
           Cookie:
             ".ASPXAUTH=" +
             ConfigService.ConfigInstance.getConfig().ASPXAUTH +
-            "; " +
-            "ASP.NET_SessionId=5ag503ou0yg1tjhrbwmsi1x0; " +
-            "acopendivids=" +
-            "ctl00_ctl00_content_SingleContent_SSRSRpt3;",
-          "content-type": "application/x-www-form-urlencoded; charset=utf-8 ",
+            "; ",
         },
       });
-      return res;
+
+      const isTokenExpired = this.doesResponseRedirects(res);
+      if (isTokenExpired) {
+        throw new StandardError(
+          "Sesion expirada, vuelve a iniciar sesion.",
+          USER_NOT_AUTHENTICATED,
+          "informative"
+        );
+      }
+
+      return res.data;
     } catch (err) {
       return {
         status: "error",
@@ -100,6 +100,7 @@ class AxiosService {
   async getRequest(url, options) {
     const res = await this.axiosScrapping({
       url: url,
+      maxContentLength: Infinity,
       headers: {
         Cookie:
           ".ASPXAUTH=" +

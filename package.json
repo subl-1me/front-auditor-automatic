@@ -24,6 +24,7 @@
     "pdfkit": "^0.13.0",
     "spinnies": "^0.5.1",
     "tough-cookie": "^4.1.2",
-    "unzipper": "^0.10.14"
+    "unzipper": "^0.10.14",
+    "zlib": "^1.0.5"
   }
 }
