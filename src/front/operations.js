@@ -19,7 +19,6 @@ const FormData = require("form-data");
 
 // extras
 const Spinnies = require("spinnies");
-const { timeStamp } = require("console");
 
 // ENV VARS
 const {
@@ -105,11 +104,11 @@ class Operations {
     //   const guestRsrvId = guest.ReservationId.match(/\d+/)[0];
 
     //   // start obtaining open folio
-    //   await this.getReservationSheets(guestRsrvId);
+    //   await this.getReservationSheetsContent(guestRsrvId);
     // }
 
     try {
-      const data = await this.getReservationSheets("19574594");
+      const data = await this.getReservationSheetsContent("19574594");
     } catch (err) {
       console.log(err);
     }
@@ -117,7 +116,8 @@ class Operations {
 
   async addNewGuestPayment(type, amount, customer) {}
 
-  async getReservationSheets(reservationId) {
+  async getReservationSheetsContent(reservationId) {
+    this.spinnies.add("spinner-2", { text: `\tGetting reservation sheets...` });
     const API_URL_RESERVATION_PAYMENTS_ = API_URL_RESERVATION_PAYMENTS.replace(
       "rsrvId",
       reservationId
@@ -139,7 +139,8 @@ class Operations {
     for (let i = 0; i < totalSheets; i++) {
       // always plus 1 to i to handle payments sheets correctly. Sheets number only can be
       // the following: [1-8];
-      // get sheet and check if it is closed or open
+
+      //get all the matches with td_ elements that contain sheet data
       const sheet = sheetsElems.find((sheetElem) =>
         sheetElem.includes(`td_${i + 1}`)
       );
@@ -163,6 +164,9 @@ class Operations {
         });
       }
     }
+    this.spinnies.succeed("spinner-2", {
+      text: `\tGetting reservation sheets`,
+    });
     return sheets;
   }
 
@@ -172,8 +176,8 @@ class Operations {
    */
   async getReservationDetails(guest) {
     const reservationId = guest.ReservationId.match(/\d+/)[0];
-    this.spinnies.add("spinner-1", {
-      text: `Consulting ${guest.NameGuest} reservation data...`,
+    this.spinnies.add("spinner-2", {
+      text: `\tGetting reservation details...`,
     });
 
     // create new form data to send reservation id to API
@@ -215,8 +219,11 @@ class Operations {
       rates,
     };
 
-    this.spinnies.succeed("spinner-1", {
-      text: `${reservationDetails.guestName}`,
+    // this.spinnies.succeed("spinner-1", {
+    //   text: `${reservationDetails.guestName}`,
+    // });
+    this.spinnies.succeed("spinner-2", {
+      text: `\tGetting reservation details...`,
     });
     return reservationDetails;
   }
@@ -450,32 +457,52 @@ class Operations {
     this.spinnies.add("spinner-1", { text: "Consulting guest list..." });
     const guests = await this.getGuestsList();
     this.spinnies.succeed("spinner-1");
+
+    // create checker results file
+    const pitCheckerResultDir = path.join(__dirname, "pit-result.json");
+    await new Promise((resolve, reject) => {
+      fs.writeFile(pitCheckerResultDir, "PIT RESULT\n\n\n", (err) => {
+        if (err) {
+          console.log("Error trying to create pit result file.");
+          resolve();
+        }
+
+        resolve();
+      });
+    });
+
+    const pitResults = {
+      reservations: [],
+    };
     for (const guest of guests) {
+      this.spinnies.add("spinner-1", {
+        text: `Processing ${guest.NameGuest} reservation data...`,
+      });
       const reservationDetails = await this.getReservationDetails(guest);
-      console.log("Reservation ID:", reservationDetails.id);
-      console.log("dateIn:", reservationDetails.dateIn);
-      console.log("dateOut:", reservationDetails.dateOut);
-      console.log("Room:", reservationDetails.room);
-      console.log("Nights:", reservationDetails.nights);
-      console.log("Total to pay:", reservationDetails.rates.totalAmount);
-      console.log("------");
-      const sheets = await this.getReservationSheets(reservationDetails.id);
+
+      // console.log("Reservation ID:", reservationDetails.id);
+      // console.log("dateIn:", reservationDetails.dateIn);
+      // console.log("dateOut:", reservationDetails.dateOut);
+      // console.log("Room:", reservationDetails.room);
+      // console.log("Nights:", reservationDetails.nights);
+      // console.log("Total to pay:", reservationDetails.rates.totalAmount);
+      // console.log("------");
+      const sheets = await this.getReservationSheetsContent(
+        reservationDetails.id
+      );
+      this.spinnies.add("spinner-3", { text: `\tGetting sheet payments...` });
       sheets.forEach((sheet) => {
+        this.spinnies.update("spinner-3", {
+          text: `\tGetting sheet ${sheet.sheetNumber} payments...`,
+        });
         if (
           sheet.status === "CLOSED" &&
           reservationDetails.dateOut === systemDate
         ) {
-          console.log("\x1b[31mSheet closed. Today is check-out. \x1b[0m");
         }
         if (sheet.status === "OPEN") {
-          console.log(`Current sheet: ${sheet.sheetNumber}:`);
-          console.log(`\tBalance: ${sheet.balance}`);
-          console.log(`\tPayments:`);
           if (sheet.payments.length > 0) {
-            sheet.payments.forEach((payment) => {
-              console.log("\tTransaction amount: ", payment.transactionAmount);
-              console.log("\tTransaction type: ", payment.transactionType);
-            });
+            sheet.payments.forEach((payment) => {});
 
             // Only if sheet has more than 1 payments
             const totalGuestPayments = sheet.payments.reduce(
@@ -486,129 +513,52 @@ class Operations {
             );
 
             if (totalGuestPayments === reservationDetails.rates.totalAmount) {
-              console.log("\x1b[32mPayment is complete. \x1b[0m");
+              pitResults.reservations.push({
+                ...reservationDetails,
+                sheets,
+                status: "PAID",
+              });
+
+              // console.log(pitResults);
+              // console.log(pitResults.paidReservations[0].payments);
             } else {
               const paymentDifference = parseFloat(
                 reservationDetails.rates.totalAmount - totalGuestPayments
               ).toFixed(2);
-              console.log(
-                "\x1b[33mGuest's payments dont match with reservation total amount. \x1b[0m"
-              );
-              console.log("Difference:", paymentDifference);
+              pitResults.reservations.push({
+                ...reservationDetails,
+                sheets,
+                status: "ERROR",
+                matchError: true,
+                message: `Guest's payment doesnt match with reservation total amount`,
+              });
+
+              // console.log(pitResults);
+              // console.log(pitResults.reservationWithErrors[0].amounts);
             }
           } else {
             // If sheet has no payments maybe it is already paid by: credit virtual card or it is CXC
             //TODO: Implement payment verification
-            console.log("\tSheet has no payments.");
           }
         }
+        this.spinnies.succeed("spinner-3", {
+          text: `\tGetting sheet payments`,
+        });
+        // if (
+        //   pitResults.reservationWithErrors.filter(
+        //     (rsrv) => rsrv.room === guest.Room
+        //   )
+        // ) {
+        //   console.log("Reservation has payment errors");
+        // }
       });
-      // try {
 
-      //   // try 'cause rsrRateString throws an error if rate is 0 for employers
-      //   let rsrvRateString = userDetailsHtml.match(rateValuePattern)[0];
-
-      //   const rsrvRate = parseFloat(
-      //     rsrvRateString.replace("$", "").replace(",", "")
-      //   );
-      //   const rsrvRateWTax = Number(rsrvRate * 1.12).toFixed(2);
-      //   const preRsrvTotalCost = (rsrvRateWTax * nights).toFixed(2);
-
-      //
-
-      //   if (!getRatesResponse.userdata) {
-      //     console.log("Error trying to get reservation rates");
-      //     return;
-      //   }
-
-      //   console.log(getRatesResponse);
-
-      //   const rsrvTotalAmount = parseFloat(
-      //     getRatesResponse.userdata.TotalAmount
-      //   ).toFixed(2);
-
-      //   console.log("Final total cost:", rsrvTotalAmount);
-      //   if (rsrvTotalAmount !== preRsrvTotalCost) {
-      //     console.log(
-      //       "Reservation total cost does not match with rates. Check it manually."
-      //     );
-      //   } else {
-      //     console.log("All amounts match!");
-      //   }
-
-      //   const API_URL_PAYMENTS_MODIFIED = API_URL_PAYMENTS.replace(
-      //     "rsrvIdField",
-      //     guestRsrvId
-      //   );
-
-      //   console.log("Checking reservation payment type...");
-      //   const API_URL_PAYMENT = API_URL_RSRV_PAYMENT_TYPE.replace(
-      //     "rsrvIdField",
-      //     guestRsrvId
-      //   );
-      //   const paymentTypeHtmlRaw = await this.axiosService.getRequest(
-      //     API_URL_PAYMENT
-      //   );
-
-      //   const paymentTypePattern = /<input name="cboCardType"([^>]*)>/;
-      //   const paymentTypeHtmlInput =
-      //     paymentTypeHtmlRaw.match(paymentTypePattern)[0];
-
-      //   const validPayments = [
-      //     "Por definir CXC",
-      //     "TRANSFERENCIA ELECTRONICA DE FONDOS",
-      //     "MASTER CARD",
-      //     "AMERICAN EXPRESS",
-      //     "EFECTIVO",
-      //     "VISA",
-      //     "Seleccionar",
-      //   ];
-      //   const paymentType = validPayments.find((payment) =>
-      //     paymentTypeHtmlInput.includes(payment)
-      //   );
-      //   console.log("Payment type:", paymentType);
-      //   if (
-      //     paymentType !== "Por definir CXC" &&
-      //     paymentType !== "TRANSFERENCIA ELECTRONICA DE FONDOS" &&
-      //     paymentType !== "Seleccionar"
-      //   ) {
-      //     this.spinnies.add("spinner-1", {
-      //       text: "Consulting guest payments...",
-      //     });
-      //     const guestPaymentsHtmlRaw = await this.axiosService.getRequest(
-      //       API_URL_PAYMENTS_MODIFIED
-      //     );
-
-      //     this.spinnies.succeed("spinner-1", {
-      //       text: "Payments data recieved.",
-      //     });
-      //     const guestBalancePattern = /\$ [0-9]+,?[0-9]+\.[0-9]+/;
-      //     const guestBalanceString =
-      //       guestPaymentsHtmlRaw.match(guestBalancePattern)[0];
-      //     const guestBalance = parseFloat(
-      //       guestBalanceString.replace("$ ", "").replace(",", "")
-      //     );
-      //     console.log("Guest balance:", guestBalance);
-      //     if (Number(guestBalance) === Number(rsrvTotalAmount)) {
-      //       console.log("\x1b[32m%s\x1b[0m", "All payments are OK!");
-      //     } else {
-      //       console.log(
-      //         "\x1b[31m%s\x1b[0m",
-      //         "Total amount and guest balance differs. Pleace check it manually!"
-      //       );
-      //     }
-      //     // console.log("\x1b[33m%s\x1b[0m", guest.NameGuest);
-      //     // console.log(`Rate: ${rsrvRateString} `);
-      //     // console.log(`Rate code: ${rsrvRateCode} `);
-      //     // this.spinnies.add("spinner-1", { text: "Checking payments..." });
-      //     // console.log("Recent payment: $880.00");
-      //     // console.log("Total to pay: $880.00");
-      //     // this.spinnies.succeed("spinner-1");
-      //     // console.log("\x1b[32m%s\x1b[0m", "All payments are OK!");
-      //     // console.log("\n");
-
-      //     // Compare rates
+      this.spinnies.succeed("spinner-1", {
+        text: `${guest.NameGuest}`,
+      });
       console.log("\n");
+
+      // console.log(reservationDetails);
       //   }
 
       // } catch (err) {
@@ -617,6 +567,44 @@ class Operations {
       //   console.log("--- \n");
       // }
     }
+
+    pitResults.reservations.forEach((reservation) => {
+      console.log(reservation);
+      reservation.sheets.forEach((sheet) => {
+        console.log(sheet);
+        if (sheet.payments && sheet.payments.length > 0) {
+          sheet.payments.forEach((payment) => {
+            console.log(payment);
+          });
+        }
+      });
+      reservation.rates.ratesPerDay.forEach((rate) => {
+        console.log(rate);
+      });
+    });
+
+    fs.appendFile(pitCheckerResultDir, pitResults, (err) => {
+      if (err) {
+        console.log("Error trying to insert payment error inside result file.");
+      }
+    });
+    // let textToAppend = "";
+    // pitResults.paidReservations.forEach((reservation) => {
+    //   textToAppend = `${reservation.guest}\n${reservation.room}\nReservastion status: ${reservation.status}\nPayments: ${reservation.payments}\Balance: ${reservation.balance}\n\n`;
+
+    // });
+
+    // pitResults.reservationWithErrors.forEach((reservation) => {
+    //   textToAppend = `${reservation.guest}\n${reservation.room}\nReservastion status: ${reservation.status}\nPayments: ${reservation.amounts}\nError message: ${reservation.message}\n\n`;
+    //   fs.appendFile(pitCheckerResultDir, textToAppend, (err) => {
+    //     if (err) {
+    //       console.log(
+    //         "Error trying to insert payment error inside result file."
+    //       );
+    //     }
+    //   });
+    // });
+    // require("child_process").exec(`start "" ${pitCheckerResultDir}`);
 
     // rate code
     return {
