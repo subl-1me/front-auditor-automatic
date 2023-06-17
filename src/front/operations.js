@@ -117,7 +117,6 @@ class Operations {
   async addNewGuestPayment(type, amount, customer) {}
 
   async getReservationSheetsContent(reservationId) {
-    this.spinnies.add("spinner-2", { text: `\tGetting reservation sheets...` });
     const API_URL_RESERVATION_PAYMENTS_ = API_URL_RESERVATION_PAYMENTS.replace(
       "rsrvId",
       reservationId
@@ -164,9 +163,7 @@ class Operations {
         });
       }
     }
-    this.spinnies.succeed("spinner-2", {
-      text: `\tGetting reservation sheets`,
-    });
+
     return sheets;
   }
 
@@ -176,9 +173,6 @@ class Operations {
    */
   async getReservationDetails(guest) {
     const reservationId = guest.ReservationId.match(/\d+/)[0];
-    this.spinnies.add("spinner-2", {
-      text: `\tGetting reservation details...`,
-    });
 
     // create new form data to send reservation id to API
     const formData = new FormData();
@@ -222,9 +216,6 @@ class Operations {
     // this.spinnies.succeed("spinner-1", {
     //   text: `${reservationDetails.guestName}`,
     // });
-    this.spinnies.succeed("spinner-2", {
-      text: `\tGetting reservation details...`,
-    });
     return reservationDetails;
   }
 
@@ -459,9 +450,9 @@ class Operations {
     this.spinnies.succeed("spinner-1");
 
     // create checker results file
-    const pitCheckerResultDir = path.join(__dirname, "pit-result.json");
+    const pitCheckerResultDirJson = path.join(__dirname, "pit-result.json");
     await new Promise((resolve, reject) => {
-      fs.writeFile(pitCheckerResultDir, "PIT RESULT\n\n\n", (err) => {
+      fs.writeFile(pitCheckerResultDirJson, "", (err) => {
         if (err) {
           console.log("Error trying to create pit result file.");
           resolve();
@@ -476,7 +467,7 @@ class Operations {
     };
     for (const guest of guests) {
       this.spinnies.add("spinner-1", {
-        text: `Processing ${guest.NameGuest} reservation data...`,
+        text: `Consulting ${guest.NameGuest} reservation details...`,
       });
       const reservationDetails = await this.getReservationDetails(guest);
 
@@ -487,14 +478,13 @@ class Operations {
       // console.log("Nights:", reservationDetails.nights);
       // console.log("Total to pay:", reservationDetails.rates.totalAmount);
       // console.log("------");
+      this.spinnies.update("spinner-1", {
+        text: `Getting reservation payments...`,
+      });
       const sheets = await this.getReservationSheetsContent(
         reservationDetails.id
       );
-      this.spinnies.add("spinner-3", { text: `\tGetting sheet payments...` });
       sheets.forEach((sheet) => {
-        this.spinnies.update("spinner-3", {
-          text: `\tGetting sheet ${sheet.sheetNumber} payments...`,
-        });
         if (
           sheet.status === "CLOSED" &&
           reservationDetails.dateOut === systemDate
@@ -541,9 +531,6 @@ class Operations {
             //TODO: Implement payment verification
           }
         }
-        this.spinnies.succeed("spinner-3", {
-          text: `\tGetting sheet payments`,
-        });
         // if (
         //   pitResults.reservationWithErrors.filter(
         //     (rsrv) => rsrv.room === guest.Room
@@ -554,10 +541,8 @@ class Operations {
       });
 
       this.spinnies.succeed("spinner-1", {
-        text: `${guest.NameGuest}`,
+        text: `${guest.NameGuest} | ${guest.Room} reservation data ready.`,
       });
-      console.log("\n");
-
       // console.log(reservationDetails);
       //   }
 
@@ -568,34 +553,50 @@ class Operations {
       // }
     }
 
-    pitResults.reservations.forEach((reservation) => {
-      console.log(reservation);
-      reservation.sheets.forEach((sheet) => {
-        console.log(sheet);
-        if (sheet.payments && sheet.payments.length > 0) {
-          sheet.payments.forEach((payment) => {
-            console.log(payment);
-          });
-        }
-      });
-      reservation.rates.ratesPerDay.forEach((rate) => {
-        console.log(rate);
-      });
-    });
-
-    fs.appendFile(pitCheckerResultDir, pitResults, (err) => {
-      if (err) {
-        console.log("Error trying to insert payment error inside result file.");
-      }
-    });
-    // let textToAppend = "";
-    // pitResults.paidReservations.forEach((reservation) => {
-    //   textToAppend = `${reservation.guest}\n${reservation.room}\nReservastion status: ${reservation.status}\nPayments: ${reservation.payments}\Balance: ${reservation.balance}\n\n`;
-
+    // pitResults.reservations.forEach((reservation) => {
+    //   console.log(reservation);
+    //   reservation.sheets.forEach((sheet) => {
+    //     console.log(sheet);
+    //     if (sheet.payments && sheet.payments.length > 0) {
+    //       sheet.payments.forEach((payment) => {
+    //         console.log(payment);
+    //       });
+    //     }
+    //   });
+    //   reservation.rates.ratesPerDay.forEach((rate) => {
+    //     console.log(rate);
+    //   });
     // });
 
+    const pitCheckerResultDirDetailed = path.join(__dirname, "pit-result.txt");
+    let textToAppend = "";
+    pitResults.reservations.forEach((reservation) => {
+      const guestBalance = reservation.sheets.reduce((accumulator, current) => {
+        return (accumulator += current);
+      }, 0);
+      textToAppend = `${reservation.id}\n${reservation.room}\nReservastion status: ${reservation.status}\nPayments: ${reservation.payments}\nBalance: ${guestBalance}\nError message: ${reservation.message}\n\n`;
+      fs.appendFile(pitCheckerResultDirDetailed, textToAppend, (err) => {
+        if (err) {
+          console.log(
+            "Error trying to insert payment error inside result file."
+          );
+        }
+      });
+    });
+    fs.appendFile(
+      pitCheckerResultDirJson,
+      JSON.stringify(pitResults),
+      (err) => {
+        if (err) {
+          console.log(
+            "Error trying to insert payment error inside result file."
+          );
+        }
+      }
+    );
+
     // pitResults.reservationWithErrors.forEach((reservation) => {
-    //   textToAppend = `${reservation.guest}\n${reservation.room}\nReservastion status: ${reservation.status}\nPayments: ${reservation.amounts}\nError message: ${reservation.message}\n\n`;
+    //   textToAppend = `${reservation.guestName}\n${reservation.room}\nReservastion status: ${reservation.status}\nPayments: ${reservation.amounts}\nError message: ${reservation.message}\n\n`;
     //   fs.appendFile(pitCheckerResultDir, textToAppend, (err) => {
     //     if (err) {
     //       console.log(
@@ -604,7 +605,6 @@ class Operations {
     //     }
     //   });
     // });
-    // require("child_process").exec(`start "" ${pitCheckerResultDir}`);
 
     // rate code
     return {
