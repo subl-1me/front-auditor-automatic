@@ -137,11 +137,10 @@ class PitResultBuilder {
       trHTMLElementRates.push(trRate);
     });
 
-    const paymentsHTMLString = builderInstance.concatenateTableDataElems(
+    const paymentsHTMLString = this.concatenateTableDataElems(
       trHTMLElementsPayments
     );
-    const ratesHTMLString =
-      builderInstance.concatenateTableDataElems(trHTMLElementRates);
+    const ratesHTMLString = this.concatenateTableDataElems(trHTMLElementRates);
 
     const sheetBalanceSanit = Number(
       currentSheet.balance.replace("-", "").replace("$", "").replace(",", "")
@@ -356,71 +355,121 @@ class PitResultBuilder {
       );
     }
   }
-}
 
-const builderInstance = new PitResultBuilder();
-const startTest = async () => {
-  const { templateDir, HTMLTemplateString } =
-    await builderInstance.createDefaultTemplate();
-  const mockDataDir = path.normalize(
-    "C:/Users/julio/Documents/hotel-auditor-automatic/src/front/pit-result.json"
-  );
-  const mockData = await fs.readFile(mockDataDir, "utf8", (err, data) => {
-    if (err) {
-      throw new Error("Error trying to read json");
+  /**
+   * @description Creates a new HTML page to show the provided reservation details
+   * @param {Array<*>} reservations Array of guest reservations
+   */
+  async createResultPage(reservations) {
+    const { templateDir, HTMLTemplateString } =
+      await this.createDefaultTemplate();
+
+    let tableDataHTMLContent = "";
+    for (const reservation of reservations) {
+      const tableRowTemplate = this.createTableRow(reservation.id);
+      const tableDataElements = this.setupTableDataElements(reservation);
+      const tableDataElemsString =
+        this.concatenateTableDataElems(tableDataElements);
+      const affectedRow = this.insertRowData(
+        tableRowTemplate,
+        tableDataElemsString
+      );
+      tableDataHTMLContent += affectedRow + "\n";
+
+      // add another table row with collapse feature to display reservation payments
+      const tableRowCollapseTemplate = this.createTableRow(
+        reservation.id,
+        true
+      );
+
+      const collapseRowDataString =
+        this.setupCollapseTableRowDataElems(reservation);
+
+      const affectedRow2 = this.insertRowData(
+        tableRowCollapseTemplate,
+        collapseRowDataString
+      );
+
+      tableDataHTMLContent += affectedRow2 + "\n  ";
     }
 
-    return data;
-  });
-
-  const mockDataParsed = JSON.parse(mockData);
-  let tableDataHTMLContent = "";
-  for (const reservation of mockDataParsed.reservations) {
-    const tableRowTemplate = builderInstance.createTableRow(reservation.id);
-    const tableDataElements =
-      builderInstance.setupTableDataElements(reservation);
-    const tableDataElemsString =
-      builderInstance.concatenateTableDataElems(tableDataElements);
-    const affectedRow = builderInstance.insertRowData(
-      tableRowTemplate,
-      tableDataElemsString
+    // write in local template file
+    const HTMLTemplateModified = this.insertTableRows(
+      tableDataHTMLContent,
+      HTMLTemplateString
     );
-    tableDataHTMLContent += affectedRow + "\n";
+    await Directory.saveFile(templateDir, HTMLTemplateModified, "utf8");
+    await this.createPageTemplateStyles();
 
-    // add another table row with collapse feature to display reservation payments
-    const tableRowCollapseTemplate = builderInstance.createTableRow(
-      reservation.id,
-      true
-    );
-
-    const collapseRowDataString =
-      builderInstance.setupCollapseTableRowDataElems(reservation);
-
-    const affectedRow2 = builderInstance.insertRowData(
-      tableRowCollapseTemplate,
-      collapseRowDataString
-    );
-
-    tableDataHTMLContent += affectedRow2 + "\n  ";
+    return {
+      message: "OK",
+    };
   }
+}
 
-  // write in local template file
-  const HTMLTemplateModified = builderInstance.insertTableRows(
-    tableDataHTMLContent,
-    HTMLTemplateString
-  );
-  await Directory.saveFile(templateDir, HTMLTemplateModified, "utf8");
-  await builderInstance.createPageTemplateStyles();
-};
+// const builderInstance = new PitResultBuilder();
+// const startTest = async () => {
+//   const { templateDir, HTMLTemplateString } =
+//     await builderInstance.createDefaultTemplate();
+//   const mockDataDir = path.normalize(
+//     "C:/Users/julio/Documents/hotel-auditor-automatic/src/front/pit-result.json"
+//   );
+//   const mockData = await fs.readFile(mockDataDir, "utf8", (err, data) => {
+//     if (err) {
+//       throw new Error("Error trying to read json");
+//     }
 
-const init = () => {
-  return new Promise(async (resolve, reject) => {
-    await startTest();
-    console.log("after start test");
-    resolve();
-  });
-};
+//     return data;
+//   });
 
-init();
+//   const mockDataParsed = JSON.parse(mockData);
+//   let tableDataHTMLContent = "";
+//   for (const reservation of mockDataParsed.reservations) {
+//     const tableRowTemplate = builderInstance.createTableRow(reservation.id);
+//     const tableDataElements =
+//       builderInstance.setupTableDataElements(reservation);
+//     const tableDataElemsString =
+//       builderInstance.concatenateTableDataElems(tableDataElements);
+//     const affectedRow = builderInstance.insertRowData(
+//       tableRowTemplate,
+//       tableDataElemsString
+//     );
+//     tableDataHTMLContent += affectedRow + "\n";
 
-module.export = PitResultBuilder;
+//     // add another table row with collapse feature to display reservation payments
+//     const tableRowCollapseTemplate = builderInstance.createTableRow(
+//       reservation.id,
+//       true
+//     );
+
+//     const collapseRowDataString =
+//       builderInstance.setupCollapseTableRowDataElems(reservation);
+
+//     const affectedRow2 = builderInstance.insertRowData(
+//       tableRowCollapseTemplate,
+//       collapseRowDataString
+//     );
+
+//     tableDataHTMLContent += affectedRow2 + "\n  ";
+//   }
+
+//   // write in local template file
+//   const HTMLTemplateModified = builderInstance.insertTableRows(
+//     tableDataHTMLContent,
+//     HTMLTemplateString
+//   );
+//   await Directory.saveFile(templateDir, HTMLTemplateModified, "utf8");
+//   await builderInstance.createPageTemplateStyles();
+// };
+
+// const init = () => {
+//   return new Promise(async (resolve, reject) => {
+//     await startTest();
+//     console.log("after start test");
+//     resolve();
+//   });
+// };
+
+// init();
+
+module.exports = PitResultBuilder;
