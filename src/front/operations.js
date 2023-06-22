@@ -182,41 +182,36 @@ class Operations {
       formData
     );
 
-    // get total reservation nights
-    //   const paymentTypePattern = /<input name="cboCardType"([^>]*)>/;
-    const rsrvNightsElementPattern =
-      /<span id="ctl00_ctl00_content_leftContent_lblDays" ([^\n]*)>/;
-    const rsrvNightsElement = reservationDetailsHtmlRaw.match(
-      rsrvNightsElementPattern
-    )[0];
-    const rsrvNightsPattern = />(\d+)</;
-    const rsrvNights = rsrvNightsElement
-      .match(rsrvNightsPattern)[0]
-      .match(/\d+/)[0];
-
     const rates = await this.getReservationRates(
       reservationId,
       reservationDetailsHtmlRaw
     );
 
-    // rates.totalAmount = parseFloat(
-    //   rsrvNights * rates.ratePerNightWithTax
-    // ).toFixed(2);
+    // Capitalize entire guest name for better presentation
+    const capitalizedName = this.capitalizeGuestName(guest.NameGuest);
 
     const reservationDetails = {
       id: Number(reservationId),
+      guest: capitalizedName,
+      membership: guest.FreqTvl,
       dateIn: guest.dateIn,
       dateOut: guest.dateOut,
-      guestName: guest.NameGuest,
+      nights: rates.ratesPerDay.length,
       room: Number(guest.Room),
-      nights: Number(rsrvNights),
       rates,
     };
 
-    // this.spinnies.succeed("spinner-1", {
-    //   text: `${reservationDetails.guestName}`,
-    // });
     return reservationDetails;
+  }
+
+  capitalizeGuestName(name) {
+    const nameSegments = name.toLowerCase().split(" ");
+
+    const capitalizedName = nameSegments.reduce((accumulator, current) => {
+      return (accumulator +=
+        current.charAt(0).toUpperCase() + current.slice(1) + " ");
+    }, "");
+    return capitalizedName;
   }
 
   /**
@@ -260,29 +255,26 @@ class Operations {
     const ratesInfo = ratesResponse.rows;
     const ratesPerDay = [];
     ratesInfo.forEach((rateRow) => {
-      const rateDate = rateRow.cell[2];
-      const rateBase = Number(parseFloat(rateRow.cell[3]).toFixed(2));
-      const rateWTax = Number(parseFloat(rateRow.cell[5]).toFixed(2));
-      ratesPerDay.push({ rateDate, rateBase, rateWTax });
+      const date = rateRow.cell[2].trim();
+      const base = Number(parseFloat(rateRow.cell[3]).toFixed(2));
+      const total = Number(parseFloat(rateRow.cell[5]).toFixed(2));
+      ratesPerDay.push({ date, base, total });
     });
     const totalAmount = Number(
       parseFloat(ratesResponse.userdata.TotalAmount).toFixed(2)
     );
 
+    const uniqueRates = new Set();
+    for (const rate of ratesPerDay) {
+      uniqueRates.add(rate.base);
+    }
+    const isRateVariable = uniqueRates.size > 1 ? true : false;
+
     return {
       totalAmount,
       ratesPerDay,
+      isRateVariable,
     };
-    // const rateValuePattern = /[0-9]+,?[0-9]+\.[0-9]+/g;
-    // const ratePerNight = parseFloat(htmlRaw.match(rateValuePattern)[0]).toFixed(
-    //   2
-    // );
-    // const ratePerNightWithTax = parseFloat(ratePerNight * 1.12).toFixed(2);
-    // const ratesInfo = {
-    //   ratePerNight,
-    //   ratePerNightWithTax,
-    // };
-    // return ratesInfo;
   }
 
   async getGuestBalance(reservationPaymentsHtmlRaw) {
@@ -457,7 +449,6 @@ class Operations {
           console.log("Error trying to create pit result file.");
           resolve();
         }
-
         resolve();
       });
     });
@@ -470,6 +461,7 @@ class Operations {
         text: `Consulting ${guest.NameGuest} reservation details...`,
       });
       const reservationDetails = await this.getReservationDetails(guest);
+      console.log(reservationDetails);
 
       // console.log("Reservation ID:", reservationDetails.id);
       // console.log("dateIn:", reservationDetails.dateIn);
@@ -632,6 +624,7 @@ class Operations {
     const regularExpression = /jQuery\d+_\d+/;
     const jqueryCallbackName = res.match(regularExpression)[0];
     const jsonText = res.replace(jqueryCallbackName + "(", "").slice(0, -2);
+    const currentDate = ConfigService.getConfig().systemDate;
 
     // filter some guests that have company's credits
     // and virtual reservations that doesn't have payments
@@ -641,7 +634,8 @@ class Operations {
       .filter((guest) => !guest.company.includes("AUTOMATYCO"))
       .filter((guest) => !guest.company.includes("NOKTOS-C"))
       .filter((guest) => guest.Room !== "INTERFACE")
-      .filter((guest) => !guest.company.includes("RGIS"));
+      .filter((guest) => !guest.company.includes("RGIS"))
+      .filter((guest) => guest.dateOut !== currentDate);
 
     return guests;
   }
