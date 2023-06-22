@@ -46,6 +46,11 @@ class Directory {
     return;
   }
 
+  async readFile(path, encoding = "utf8") {
+    const data = await fs.readFile(path, encoding);
+    return data;
+  }
+
   async deleteFile(path) {}
 
   async deleteDir(path) {}

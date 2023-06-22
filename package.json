@@ -2,8 +2,8 @@
   "name": "hotel-printer-test",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
-  "dev": "index.js'",
+  "main": "main.js",
+  "dev": "main.js'",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

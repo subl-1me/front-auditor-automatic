@@ -4,3 +4,8 @@ config.json
 config.txt
 data.txt
 parser.js
+.vs
+src/html-builder/pit-result.html
+src/html-builder/style.css
+src/front/pit-result.json
+src/front/pit-result.txt
