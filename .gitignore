@@ -2,3 +2,5 @@
 node_modules/
 config.json
 config.txt
+data.txt
+parser.js

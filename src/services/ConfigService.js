@@ -9,7 +9,7 @@ class ConfigService {
       ConfigService.instance = this;
     }
 
-    this.path = __dirname + "/config.json";
+    this.configFilePath = __dirname + "/config.json";
     this.loadConfig();
     return ConfigService.instance;
   }
@@ -17,7 +17,7 @@ class ConfigService {
   loadConfig() {
     try {
       console.log("Loading config file...");
-      const data = fs.readFileSync(this.path, "utf-8");
+      const data = fs.readFileSync(this.configFilePath, "utf-8");
       const configData = JSON.parse(data);
       this.ConfigInstance.setConfig(configData);
       console.log("\x1b[32mConfig loaded successfully.\x1b[0m");
@@ -72,7 +72,7 @@ class ConfigService {
     const bodyString = JSON.stringify(body);
     let concatedData = "";
     if (!createDefault) {
-      const data = fs.readFileSync(this.path, "utf-8");
+      const data = fs.readFileSync(this.configFilePath, "utf-8");
       const currentConfig = JSON.parse(data);
       if (!currentConfig) {
         throw new Error("Cannot parse undefined config data");
@@ -84,12 +84,53 @@ class ConfigService {
     } else {
       concatedData += bodyString;
     }
-    fs.writeFileSync(this.path, concatedData);
+    fs.writeFileSync(this.configFilePath, concatedData);
   }
 
   setAuthConfig(body) {
     this.ConfigInstance.setAuth(body);
     this.writeLocalFile(this.ConfigInstance.config, false);
+  }
+
+  /**
+   * Set a new property into config.json.
+   * It is recommended to set only config values or another not sensitive information.
+   * The data is only for globally uses of the entire programm for better handling.
+   * @param {Object} data Values to be stored
+   * @example { isTestMode: true, lastAccountUpdate: '2023/05/01' }
+   */
+  async set(newData) {
+    console.log(newData);
+    const actualConfigData = fs.readFile(
+      this.configFilePath,
+      "utf-8",
+      (err, configData) => {
+        if (err) {
+          console.log(err);
+          return;
+        }
+
+        let config = JSON.parse(configData);
+        const newProperties = Object.getOwnPropertyNames(newData);
+        console.log(newProperties);
+        newProperties.forEach((property) => {
+          console.log(property);
+          config[property] = newData[property];
+        });
+
+        // write in local config.json
+        const configString = JSON.stringify(config);
+        fs.writeFile(this.configFilePath, configString, (err) => {
+          if (err) {
+            console.log("error trying to save new config");
+            console.log(err);
+            return;
+          }
+
+          console.log("Config file updated!");
+        });
+      }
+    );
   }
 
   readLocalFile() {}

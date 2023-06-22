@@ -28,6 +28,13 @@ const {
   API_URL_AUDI_RPT_LIST,
   API_URL_AUDI_RPT,
   API_URL_COBRO_RPT_GENERATE,
+  API_URL_GUEST_LIST_GLOBAL,
+  API_URL_GUEST_RSRV_DETAILS,
+  API_URL_RESERVATION_PAYMENTS,
+  API_URL_GUEST_RSRV_RATES,
+  API_URL_PAYMENTS,
+  API_URL_HOME_PAGE,
+  API_URL_RSRV_PAYMENT_TYPE,
   VIEWSTATE,
   BUTTON_CONTEXT,
 } = process.env;
@@ -52,7 +59,6 @@ class Operations {
 
     let formData = this.setupFormData(userCredentials);
 
-    console.log(formData);
     const serviceResponse = await this.axiosService.login(formData);
     if (serviceResponse.status === "error") {
       this.spinnies.fail("spinner-1", { text: serviceResponse.errMessage });
@@ -76,9 +82,568 @@ class Operations {
       lastUsernameSession: userCredentials.username,
       ASPXAUTH,
     });
+    this.spinnies.succeed("spinner-1", { text: "Logged." });
+    // get system date by scrapping home page
+    const homePageHtmlRaw = await this.axiosService.getRequest(
+      API_URL_HOME_PAGE
+    );
 
-    this.spinnies.remove("spinner-1");
+    // get and save system date for better handling of future operations
+    const systemDatePattern = /\d{4}\/\d{2}\/\d{2}/;
+    const systemDate = homePageHtmlRaw.match(systemDatePattern)[0];
+    await ConfigService.set({ systemDate });
     return serviceResponse;
+  }
+
+  async startNoktosProcess() {
+    // const guest = await this.getGuestsList();
+    // const noktosGuests = guest.filter((guest) => guest.company === "NOKTOS-C");
+
+    // for (const guest of noktosGuests) {
+    //   console.log("Checking:", guest.NameGuest);
+    //   const guestRsrvId = guest.ReservationId.match(/\d+/)[0];
+
+    //   // start obtaining open folio
+    //   await this.getReservationSheetsContent(guestRsrvId);
+    // }
+
+    try {
+      const data = await this.getReservationSheetsContent("19574594");
+    } catch (err) {
+      console.log(err);
+    }
+  }
+
+  async addNewGuestPayment(type, amount, customer) {}
+
+  async getReservationSheetsContent(reservationId) {
+    const API_URL_RESERVATION_PAYMENTS_ = API_URL_RESERVATION_PAYMENTS.replace(
+      "rsrvId",
+      reservationId
+    );
+
+    const reservationSheetsHtmlRaw = await this.axiosService.getRequest(
+      API_URL_RESERVATION_PAYMENTS_
+    );
+
+    const guestBalanceValues = await this.getGuestBalance(
+      reservationSheetsHtmlRaw
+    );
+
+    const sheetsElemsPattern =
+      /"FolioItem" id="td_\d"|"FolioClosed" id="td_\d"/g;
+    const sheetsElems = reservationSheetsHtmlRaw.match(sheetsElemsPattern);
+    const totalSheets = sheetsElems.length;
+    let sheets = [];
+    for (let i = 0; i < totalSheets; i++) {
+      // always plus 1 to i to handle payments sheets correctly. Sheets number only can be
+      // the following: [1-8];
+
+      //get all the matches with td_ elements that contain sheet data
+      const sheet = sheetsElems.find((sheetElem) =>
+        sheetElem.includes(`td_${i + 1}`)
+      );
+
+      // if it doesnt includes FolioItem it means sheet is closed
+      const isSheetOpen = sheet.includes("FolioItem");
+      const sheetNumber = i + 1;
+      const sheetResponse = await this.getSheetPayments(
+        reservationSheetsHtmlRaw,
+        sheetNumber,
+        reservationId,
+        isSheetOpen
+      );
+
+      if (sheetResponse.status !== "CLOSED") {
+        sheets.push(sheetResponse);
+      } else {
+        sheets.push({
+          sheetNumber,
+          status: "CLOSED",
+        });
+      }
+    }
+
+    return sheets;
+  }
+
+  /**
+   * @description Get the guest's reservation details, it includes rates, code rate and total nights
+   * @param {string} id Reservation ID
+   */
+  async getReservationDetails(guest) {
+    const reservationId = guest.ReservationId.match(/\d+/)[0];
+
+    // create new form data to send reservation id to API
+    const formData = new FormData();
+    formData.append("hdn_Rsrv", reservationId);
+    const reservationDetailsHtmlRaw = await this.axiosService.postRequest(
+      API_URL_GUEST_RSRV_DETAILS,
+      formData
+    );
+
+    // get total reservation nights
+    //   const paymentTypePattern = /<input name="cboCardType"([^>]*)>/;
+    const rsrvNightsElementPattern =
+      /<span id="ctl00_ctl00_content_leftContent_lblDays" ([^\n]*)>/;
+    const rsrvNightsElement = reservationDetailsHtmlRaw.match(
+      rsrvNightsElementPattern
+    )[0];
+    const rsrvNightsPattern = />(\d+)</;
+    const rsrvNights = rsrvNightsElement
+      .match(rsrvNightsPattern)[0]
+      .match(/\d+/)[0];
+
+    const rates = await this.getReservationRates(
+      reservationId,
+      reservationDetailsHtmlRaw
+    );
+
+    // rates.totalAmount = parseFloat(
+    //   rsrvNights * rates.ratePerNightWithTax
+    // ).toFixed(2);
+
+    const reservationDetails = {
+      id: Number(reservationId),
+      dateIn: guest.dateIn,
+      dateOut: guest.dateOut,
+      guestName: guest.NameGuest,
+      room: Number(guest.Room),
+      nights: Number(rsrvNights),
+      rates,
+    };
+
+    // this.spinnies.succeed("spinner-1", {
+    //   text: `${reservationDetails.guestName}`,
+    // });
+    return reservationDetails;
+  }
+
+  /**
+   * @description Get reservation rates by searching by id or scrapping reservation html raw
+   * @param {string} reservationId
+   * @param {string} htmlRaw
+   * @retrun Array with reservation rates per date or execute an error
+   */
+  async getReservationRates(reservationId, htmlRaw = null) {
+    if (!htmlRaw) {
+      console.log(
+        "Html raw was not provided. Process to search by reservation ID..."
+      );
+      return;
+    }
+
+    //get rate code
+    const rateCodePattern = /Codigo Tarifa:\ [0-9]+/;
+    // we will get: CodigoTarifa: 1234
+    // so i splitted by :
+    const rsrvRateCode = htmlRaw
+      .match(rateCodePattern)[0]
+      .split(":")[1]
+      .replace(" ", "");
+    const systemDate = ConfigService.getConfig().systemDate;
+    if (!systemDate) {
+      throw new Error("Error trying to get system date.");
+    }
+
+    // first replace some query params in API_URL
+    const API_URL_RSRV_RATES_PER_DATE = API_URL_GUEST_RSRV_RATES.replace(
+      "rsrvIdField",
+      reservationId
+    )
+      .replace("dateField", systemDate)
+      .replace("rateCodeField", rsrvRateCode);
+    const ratesResponse = await this.axiosService.getRequest(
+      API_URL_RSRV_RATES_PER_DATE
+    );
+
+    const ratesInfo = ratesResponse.rows;
+    const ratesPerDay = [];
+    ratesInfo.forEach((rateRow) => {
+      const rateDate = rateRow.cell[2];
+      const rateBase = Number(parseFloat(rateRow.cell[3]).toFixed(2));
+      const rateWTax = Number(parseFloat(rateRow.cell[5]).toFixed(2));
+      ratesPerDay.push({ rateDate, rateBase, rateWTax });
+    });
+    const totalAmount = Number(
+      parseFloat(ratesResponse.userdata.TotalAmount).toFixed(2)
+    );
+
+    return {
+      totalAmount,
+      ratesPerDay,
+    };
+    // const rateValuePattern = /[0-9]+,?[0-9]+\.[0-9]+/g;
+    // const ratePerNight = parseFloat(htmlRaw.match(rateValuePattern)[0]).toFixed(
+    //   2
+    // );
+    // const ratePerNightWithTax = parseFloat(ratePerNight * 1.12).toFixed(2);
+    // const ratesInfo = {
+    //   ratePerNight,
+    //   ratePerNightWithTax,
+    // };
+    // return ratesInfo;
+  }
+
+  async getGuestBalance(reservationPaymentsHtmlRaw) {
+    const guestBalanceElePattern = /<span id="lblGuestBalance"(.*)/;
+    const balanceHtmlElement = reservationPaymentsHtmlRaw.match(
+      guestBalanceElePattern
+    )[0];
+    const guestBalancePattern = /[-+]?\$ [0-9]+,?[0-9]+\.[0-9]+/;
+    let balanceStringResult = balanceHtmlElement.match(guestBalancePattern);
+    let balanceString = !balanceStringResult
+      ? "$ 0.00"
+      : balanceStringResult[0];
+
+    const balance = Number(
+      balanceString
+        .replace("$", "")
+        .replace(",", "")
+        .replace("-", "")
+        .replace("+", "")
+    );
+    const isCreditBalance = balanceString.includes("-");
+    const guestBalance = {
+      balance,
+      balanceString,
+      isCreditBalance,
+    };
+    return guestBalance;
+  }
+
+  async getSheetPayments(
+    reservationPaymentsHtmlRaw,
+    sheetNumber,
+    reservationId,
+    isSheetOpen
+  ) {
+    if (!isSheetOpen) {
+      return {
+        sheetNumber,
+        status: "closed",
+      };
+    }
+
+    // Get the entire DIV that contains sheet reservation sheet's payments and charges
+    const reservationSheetDivElePattern = new RegExp(
+      `<div class="datagrid" id='tab${sheetNumber}'>([\\s\\S\\t]*)<\/div>`
+    );
+    const sheetDiv = reservationPaymentsHtmlRaw.match(
+      reservationSheetDivElePattern
+    )[0];
+
+    // Sheet div rows contains guest's charges and payments
+    const sheetDivRowPatternString = `<tr class="GridRow">([\\s\\S\\t.]*?)<\/tr>`;
+    const divRowPattern = new RegExp(sheetDivRowPatternString, "g");
+    const sheetDivRowAltPatternString = `<tr class="GridRowAlt">([\\s\\S\\t.]*?)<\/tr>`;
+    const divRowAltPattern = new RegExp(sheetDivRowAltPatternString, "g");
+
+    // Sheet footer contains sheet total amount inside
+    const sheetDivRowFooterString = `<tr class="GridFooter">([\\s\\S\\t.]*?)<\/tr>`;
+    const divRowFooterPattern = new RegExp(sheetDivRowFooterString, "g");
+    const sheetRows = sheetDiv.match(divRowPattern);
+    const sheetAltRows = sheetDiv.match(divRowAltPattern);
+    const sheetRowFooter = sheetDiv.match(divRowFooterPattern)[0]; // sheets always has footer
+    const sheetBalancePattern =
+      /[-+]?\$ [0-9]+,?[0-9]+\.[0-9]+|[-+]?\$ \d+\.\d+/;
+    const sheetBalance = sheetRowFooter.match(sheetBalancePattern);
+
+    let payments = [];
+    let payment;
+    if (sheetRows) {
+      payment = this.filterReservationTransactions(sheetRows, "payment");
+      if (payment) {
+        payments.push(payment);
+      }
+    } else {
+      return {
+        sheetNumber,
+        status: "empty",
+      };
+    }
+
+    if (sheetAltRows) {
+      payment = this.filterReservationTransactions(sheetAltRows, "payment");
+      if (payment) {
+        payments.push(payment);
+      }
+    }
+
+    const balance = sheetBalance ? sheetBalance[0] : "$ 0.00";
+    return {
+      sheetNumber,
+      status: "OPEN",
+      balance: balance,
+      payments,
+    };
+    // const sheetTabElemPattern = `<div class="tab${sheetNumber}" class="datagrid"></div>`;
+    // const sheetTabPattern = new RegExp(sheetTabElemPattern);
+    // console.log(sheetTabPattern);
+    // const sheetTabContent = reservationPaymentsHtmlRaw.match(sheetTabPattern);
+    // console.log(sheetTabContent);
+    // const API_URL_PAYMENTS = API_URL_PAYMENTS.replace("rsrvId", reservationId);
+    // const reservationPaymentsHtmlRaw = await this.axiosService.getRequest(
+    //   API_URL_PAYMENTS
+    // );
+    // const guestBalanceString
+    //   guestPaymentsHtmlRaw.match(guestBalancePattern)[0];
+    // const guestBalance = parseFloat(
+    //   guestBalanceString.replace("$ ", "").replace(",", "")
+    // );
+  }
+
+  /**
+   * @description Get all the payments movements inside guest's reservation sheets
+   * @param {Array<*>} transactionMovementRows Html rows that contains movements data
+   * @return Array of payments
+   */
+  filterReservationTransactions(transactionRows, transactionType) {
+    const guestPaymentTypes = [
+      "VISADEB",
+      "EFECTIVO",
+      "AME",
+      "TRANSFERENCIA ELECTRONICA DE FONDOS",
+      "VISAINT",
+      "VIS",
+      "DEPOSITOS",
+      "MASTERCARD",
+    ];
+
+    const paymentDateElemPattern = /\d+\/\d+\/\d+/;
+    const paymentAmountPattern = /[0-9]+,?[0-9]+\.[0-9]+|[-+]?\$ \d+\.\d+/;
+    for (const row of transactionRows) {
+      const transactionDate = row.match(paymentDateElemPattern)[0];
+      const transactionAmountString = row.match(paymentAmountPattern)[0];
+      const transactionAmount = Number(
+        parseFloat(transactionAmountString.replace(",", "")).toFixed(2)
+      );
+      const transactionType = guestPaymentTypes
+        .filter((payment) => {
+          return row.includes(payment);
+        })
+        .shift();
+
+      if (transactionType) {
+        return {
+          transactionDate,
+          transactionAmount,
+          transactionType,
+        };
+
+        //TODO: Implement the charge list feature
+        // } else {
+        //   charges.push({
+        //     movementType: "HAB",
+        //     movementDate,
+        //     movementAmount,
+        //   });
+        // }
+      }
+    }
+  }
+
+  async checkPit() {
+    const systemDate = ConfigService.getConfig().systemDate;
+    this.spinnies.add("spinner-1", { text: "Consulting guest list..." });
+    const guests = await this.getGuestsList();
+    this.spinnies.succeed("spinner-1");
+
+    // create checker results file
+    const pitCheckerResultDirJson = path.join(__dirname, "pit-result.json");
+    await new Promise((resolve, reject) => {
+      fs.writeFile(pitCheckerResultDirJson, "", (err) => {
+        if (err) {
+          console.log("Error trying to create pit result file.");
+          resolve();
+        }
+
+        resolve();
+      });
+    });
+
+    const pitResults = {
+      reservations: [],
+    };
+    for (const guest of guests) {
+      this.spinnies.add("spinner-1", {
+        text: `Consulting ${guest.NameGuest} reservation details...`,
+      });
+      const reservationDetails = await this.getReservationDetails(guest);
+
+      // console.log("Reservation ID:", reservationDetails.id);
+      // console.log("dateIn:", reservationDetails.dateIn);
+      // console.log("dateOut:", reservationDetails.dateOut);
+      // console.log("Room:", reservationDetails.room);
+      // console.log("Nights:", reservationDetails.nights);
+      // console.log("Total to pay:", reservationDetails.rates.totalAmount);
+      // console.log("------");
+      this.spinnies.update("spinner-1", {
+        text: `Getting reservation payments...`,
+      });
+      const sheets = await this.getReservationSheetsContent(
+        reservationDetails.id
+      );
+      sheets.forEach((sheet) => {
+        if (
+          sheet.status === "CLOSED" &&
+          reservationDetails.dateOut === systemDate
+        ) {
+        }
+        if (sheet.status === "OPEN") {
+          if (sheet.payments.length > 0) {
+            sheet.payments.forEach((payment) => {});
+
+            // Only if sheet has more than 1 payments
+            const totalGuestPayments = sheet.payments.reduce(
+              (accumulator, currentPayment) => {
+                return accumulator + currentPayment.transactionAmount;
+              },
+              0
+            );
+
+            if (totalGuestPayments === reservationDetails.rates.totalAmount) {
+              pitResults.reservations.push({
+                ...reservationDetails,
+                sheets,
+                status: "PAID",
+              });
+
+              // console.log(pitResults);
+              // console.log(pitResults.paidReservations[0].payments);
+            } else {
+              const paymentDifference = parseFloat(
+                reservationDetails.rates.totalAmount - totalGuestPayments
+              ).toFixed(2);
+              pitResults.reservations.push({
+                ...reservationDetails,
+                sheets,
+                status: "ERROR",
+                matchError: true,
+                message: `Guest's payment doesnt match with reservation total amount`,
+              });
+
+              // console.log(pitResults);
+              // console.log(pitResults.reservationWithErrors[0].amounts);
+            }
+          } else {
+            // If sheet has no payments maybe it is already paid by: credit virtual card or it is CXC
+            //TODO: Implement payment verification
+          }
+        }
+        // if (
+        //   pitResults.reservationWithErrors.filter(
+        //     (rsrv) => rsrv.room === guest.Room
+        //   )
+        // ) {
+        //   console.log("Reservation has payment errors");
+        // }
+      });
+
+      this.spinnies.succeed("spinner-1", {
+        text: `${guest.NameGuest} | ${guest.Room} reservation data ready.`,
+      });
+      // console.log(reservationDetails);
+      //   }
+
+      // } catch (err) {
+      //   console.log(err);
+      //   console.log("USO CASA");
+      //   console.log("--- \n");
+      // }
+    }
+
+    // pitResults.reservations.forEach((reservation) => {
+    //   console.log(reservation);
+    //   reservation.sheets.forEach((sheet) => {
+    //     console.log(sheet);
+    //     if (sheet.payments && sheet.payments.length > 0) {
+    //       sheet.payments.forEach((payment) => {
+    //         console.log(payment);
+    //       });
+    //     }
+    //   });
+    //   reservation.rates.ratesPerDay.forEach((rate) => {
+    //     console.log(rate);
+    //   });
+    // });
+
+    const pitCheckerResultDirDetailed = path.join(__dirname, "pit-result.txt");
+    let textToAppend = "";
+    pitResults.reservations.forEach((reservation) => {
+      const guestBalance = reservation.sheets.reduce((accumulator, current) => {
+        return (accumulator += current);
+      }, 0);
+      textToAppend = `${reservation.id}\n${reservation.room}\nReservastion status: ${reservation.status}\nPayments: ${reservation.payments}\nBalance: ${guestBalance}\nError message: ${reservation.message}\n\n`;
+      fs.appendFile(pitCheckerResultDirDetailed, textToAppend, (err) => {
+        if (err) {
+          console.log(
+            "Error trying to insert payment error inside result file."
+          );
+        }
+      });
+    });
+    fs.appendFile(
+      pitCheckerResultDirJson,
+      JSON.stringify(pitResults),
+      (err) => {
+        if (err) {
+          console.log(
+            "Error trying to insert payment error inside result file."
+          );
+        }
+      }
+    );
+
+    // pitResults.reservationWithErrors.forEach((reservation) => {
+    //   textToAppend = `${reservation.guestName}\n${reservation.room}\nReservastion status: ${reservation.status}\nPayments: ${reservation.amounts}\nError message: ${reservation.message}\n\n`;
+    //   fs.appendFile(pitCheckerResultDir, textToAppend, (err) => {
+    //     if (err) {
+    //       console.log(
+    //         "Error trying to insert payment error inside result file."
+    //       );
+    //     }
+    //   });
+    // });
+
+    // rate code
+    return {
+      status: "success",
+      message: "fuck",
+    };
+  }
+
+  /**
+   * @description Get the list of guests depending the filters provided
+   * @param filters An array that contains a list of filters for guests list
+   * @returns {Array<*>} Array of guests or throws an error
+   */
+
+  /**
+   * Example of filters
+   * orderBy - 'asc', 'desc' (asc default)
+   * skipByCompanies - [ 'company' ]
+   * skipByNameGuest - 'guest-name'
+   */
+  async getGuestsList() {
+    const res = await this.axiosService.getRequest(API_URL_GUEST_LIST_GLOBAL);
+
+    // transform jsonp from jQueryCallback into JSON
+    const regularExpression = /jQuery\d+_\d+/;
+    const jqueryCallbackName = res.match(regularExpression)[0];
+    const jsonText = res.replace(jqueryCallbackName + "(", "").slice(0, -2);
+
+    // filter some guests that have company's credits
+    // and virtual reservations that doesn't have payments
+    const guests = JSON.parse(jsonText)
+      .rows.filter((guest) => guest.Room !== "FVM01")
+      .filter((guest) => guest.Room !== "AJFMV01")
+      .filter((guest) => !guest.company.includes("AUTOMATYCO"))
+      .filter((guest) => !guest.company.includes("NOKTOS-C"))
+      .filter((guest) => guest.Room !== "INTERFACE")
+      .filter((guest) => !guest.company.includes("RGIS"));
+
+    return guests;
   }
 
   async getZipName(htmlData) {

@@ -35,6 +35,7 @@ class Home extends Menu {
             "Revisar PIT",
             "Auditoria",
             "Reportes",
+            "Run noktos proccess",
             new inquirer.Separator(),
             "Exit",
           ],
